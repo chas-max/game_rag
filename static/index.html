@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>游戏信息问答智能体</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- ═══════════════ Top Bar ═══════════════ -->
+  <header id="top-bar">
+    <h1>游戏信息问答智能体</h1>
+  </header>
+
+  <!-- ═══════════════ Sidebar ═══════════════ -->
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <button id="btn-new-conversation">新建对话</button>
+    </div>
+    <div id="conversation-list"></div>
+  </aside>
+
+  <!-- ═══════════════ Chat Area ═══════════════ -->
+  <main id="chat-area">
+    <div id="chat-header">
+      <span class="game-name" id="chat-game-name">未选择游戏</span>
+      <button id="btn-manage-sources">🧠 知识库管理</button>
+    </div>
+
+    <div id="message-list"></div>
+
+    <div id="chat-input-area">
+      <input
+        type="text"
+        id="input-game-name"
+        placeholder="游戏名称..."
+        autocomplete="off"
+      >
+      <textarea
+        id="input-message"
+        placeholder="输入你的问题，例如：塞尔达传说旷野之息 如何获得大师剑？"
+        rows="1"
+      ></textarea>
+      <button id="btn-send">发送</button>
+    </div>
+  </main>
+
+  <!-- ═══════════════ Knowledge Management Modal ═══════════════ -->
+  <div id="source-modal-overlay" class="modal-overlay hidden">
+    <div class="modal modal-wide">
+      <h2>🧠 知识库管理</h2>
+
+      <!-- 统计区 -->
+      <div id="knowledge-stats" class="stats-row">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-games">0</div>
+          <div class="stat-label">已收录游戏</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-docs">0</div>
+          <div class="stat-label">知识文档块</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-pending">0</div>
+          <div class="stat-label">待学习问题</div>
+        </div>
+      </div>
+
+      <!-- 操作区 -->
+      <div class="kb-actions">
+        <button id="btn-refresh-trending" class="kb-btn primary">🔄 获取热门游戏</button>
+        <button id="btn-process-pending" class="kb-btn">📚 处理待学习问题</button>
+        <button id="btn-trigger-cycle" class="kb-btn">⚡ 后台完整周期</button>
+      </div>
+
+      <!-- 手动添加游戏 -->
+      <div class="kb-add-game">
+        <input type="text" id="input-add-game" placeholder="输入游戏名称手动获取知识...">
+        <button id="btn-add-game" class="kb-btn primary">➕ 获取该游戏</button>
+      </div>
+
+      <!-- 标签页 -->
+      <div class="kb-tabs">
+        <button class="kb-tab active" data-tab="games">已收录游戏</button>
+        <button class="kb-tab" data-tab="pending">待学习问题</button>
+        <button class="kb-tab" data-tab="logs">获取日志</button>
+      </div>
+
+      <div id="kb-tab-content" class="kb-tab-content">
+        <div id="tab-games" class="tab-pane active"></div>
+        <div id="tab-pending" class="tab-pane"></div>
+        <div id="tab-logs" class="tab-pane"></div>
+      </div>
+
+      <div class="modal-footer">
+        <span id="kb-status-text" class="kb-status-text"></span>
+        <button class="btn-close">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ Scripts (load order matters) ═══════════════ -->
+  <script src="/static/js/api.js?v=1.1"></script>
+  <script src="/static/js/components.js?v=1.1"></script>
+  <script src="/static/js/state.js?v=1.1"></script>
+  <script src="/static/js/chat.js?v=1.1"></script>
+  <script src="/static/js/sidebar.js?v=1.1"></script>
+  <script src="/static/js/app.js?v=1.1"></script>
+</body>
+</html>
