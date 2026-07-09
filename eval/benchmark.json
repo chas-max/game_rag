@@ -1,0 +1,273 @@
+{
+  "benchmark_id": "b382e87d0f97",
+  "built_at": "2026-07-09 21:43:03",
+  "embedding_model": "paraphrase-multilingual-MiniLM-L12-v2",
+  "per_game": 2,
+  "n_items": 24,
+  "items": [
+    {
+      "id": "博德之门3#doc_857",
+      "game_name": "博德之门3",
+      "question": "《博德之门3》的开发商和发行商分别是哪家公司？",
+      "reference_answer": "开发商和发行商均为 Larian Studios。",
+      "source_doc_id": "doc_857",
+      "relevant_doc_ids": [
+        "doc_857"
+      ],
+      "source_preview": "《博德之门3》游戏知识百科 > 【游戏基本信息】 - **游戏名称**：博德之门3（Baldur's Gate 3） - **游戏类型**：CRPG（电脑角色扮演游戏），基于D&D 5e（龙与地下城第5版）规则 - **开发商**：Lari"
+    },
+    {
+      "id": "博德之门3#doc_870",
+      "game_name": "博德之门3",
+      "question": "在《博德之门3》中，攻击检定（Attack Roll）的计算公式是什么？",
+      "reference_answer": "攻击检定为D20+熟练加值+力量/敏捷调整（武器）或施法属性调整（法术），结果需对比目标AC（护甲等级）。",
+      "source_doc_id": "doc_870",
+      "relevant_doc_ids": [
+        "doc_870"
+      ],
+      "source_preview": "《博德之门3》游戏知识百科 > 【战斗系统与操作机制】 > 2. 命中与伤害 - **攻击检定**：D20+熟练加值+力量/敏捷调整（武器）或施法属性调整（法术），对比目标AC（护甲等级）。 - **伤害骰**：武器伤害（如长剑1d8）+属"
+    },
+    {
+      "id": "原神#doc_1091",
+      "game_name": "原神",
+      "question": "《原神》的游戏评级是什么？",
+      "reference_answer": "《原神》的评级为12+，具体为ESRB: T，PEGI: 7。",
+      "source_doc_id": "doc_1091",
+      "relevant_doc_ids": [
+        "doc_1091"
+      ],
+      "source_preview": "《原神》游戏知识库 > 一、游戏基本信息 - **类型**：开放世界冒险角色扮演游戏（ARPG），含动作、探索、解谜、收集等元素 - **平台**：PC（Windows）、PlayStation 4/5、iOS、Android、Ninten"
+    },
+    {
+      "id": "原神#doc_1101",
+      "game_name": "原神",
+      "question": "在《原神》中，超导反应的效果是什么？",
+      "reference_answer": "超导由雷+冰触发，造成范围冰伤，并降低敌人物理抗性40%，持续8秒，属于剧变反应，是物理队核心机制。",
+      "source_doc_id": "doc_1101",
+      "relevant_doc_ids": [
+        "doc_1101"
+      ],
+      "source_preview": "【《原神》游戏知识库 > 五、战斗系统与操作机制 > 5.2 元素反应系统（详细）】 共7种元素，反应分为两类：增幅反应和剧变反应。 | 反应名称 | 触发条件 | 效果 | 伤害类型 | 备注 | |----------|--------"
+    },
+    {
+      "id": "反恐精英2#doc_908",
+      "game_name": "反恐精英2",
+      "question": "《反恐精英2》使用了什么游戏引擎？",
+      "reference_answer": "游戏采用 Source 2 引擎。",
+      "source_doc_id": "doc_908",
+      "relevant_doc_ids": [
+        "doc_908"
+      ],
+      "source_preview": "好的，以下是为《反恐精英2》（Counter-Strike 2）生成的详细知识文本，严格基于游戏真实内容，适用于问答知识库。 --- 【游戏基本信息】 -   **游戏名称**：反恐精英2（Counter-Strike 2） -   **游"
+    },
+    {
+      "id": "反恐精英2#doc_914",
+      "game_name": "反恐精英2",
+      "question": "在CS2竞技模式中，C4炸弹的获取与归属规则是什么？",
+      "reference_answer": "只有T方一名随机玩家在开局时自动获得（称为“包匪”）。若该玩家死亡，C4会掉落在地图任意位置，任何T可捡起。CT无法拾取C4。",
+      "source_doc_id": "doc_914",
+      "relevant_doc_ids": [
+        "doc_914"
+      ],
+      "source_preview": "衣+头盔 ($1000)，拆弹钳 ($400, CT专属)，所有投掷物（闪光$200，烟雾$300，手雷$300，燃烧$600/500）。 -   **特殊道具的获取**：     -   **C4炸弹**：只有T方**一名随机玩家**在开"
+    },
+    {
+      "id": "塞尔达传说#doc_919",
+      "game_name": "塞尔达传说",
+      "question": "《塞尔达传说》系列的三部代表作品分别是什么？",
+      "reference_answer": "《时之笛》《旷野之息》《王国之泪》",
+      "source_doc_id": "doc_919",
+      "relevant_doc_ids": [
+        "doc_919"
+      ],
+      "source_preview": "《塞尔达传说》系列知识文本（以《旷野之息》为核心） > 1. 游戏基本信息 > 系列概况 - **游戏名称**：塞尔达传说（The Legend of Zelda） - **类型**：动作冒险、开放世界、角色扮演（ARPG） - **开发商"
+    },
+    {
+      "id": "塞尔达传说#doc_934",
+      "game_name": "塞尔达传说",
+      "question": "在《塞尔达传说：王国之泪》中，如何利用余料建造机制制作爆炸箭？",
+      "reference_answer": "将炸弹花附着到箭上即可制作爆炸箭，这是余料建造机制的具体应用之一。",
+      "source_doc_id": "doc_934",
+      "relevant_doc_ids": [
+        "doc_934"
+      ],
+      "source_preview": "《塞尔达传说》系列知识文本（以《旷野之息》为核心） > 5. 战斗系统与操作机制 > 【王国之泪】新增战斗机制 - **余料建造**：将特定材料附着到箭上（如炸弹花→爆炸箭、火焰果→火箭），附着到武器上（如长角+棍棒→攻击距离+）。 - *"
+    },
+    {
+      "id": "塞尔达传说 王国之泪#doc_949",
+      "game_name": "塞尔达传说 王国之泪",
+      "question": "《塞尔达传说 王国之泪》的发行日期、发行平台和游戏容量分别是多少？",
+      "reference_answer": "发行日期为2023年5月12日，发行平台为Nintendo Switch，游戏容量约18.2GB（含更新补丁）。",
+      "source_doc_id": "doc_949",
+      "relevant_doc_ids": [
+        "doc_949"
+      ],
+      "source_preview": "《塞尔达传说 王国之泪》知识文本 > 1. 游戏基本信息 - **游戏类型**：开放世界动作冒险 / 角色扮演 - **发行平台**：Nintendo Switch - **开发商**：任天堂企划制作本部（Nintendo EPD） - *"
+    },
+    {
+      "id": "塞尔达传说 王国之泪#doc_962",
+      "game_name": "塞尔达传说 王国之泪",
+      "question": "在《塞尔达传说 王国之泪》中，普尔亚的身份和特殊外貌特征是什么？",
+      "reference_answer": "普尔亚是希卡族研究员，担任哈尔诺村研究所所长。她因逆老化实验而外表变成少女，但实际年龄已超过百岁。",
+      "source_doc_id": "doc_962",
+      "relevant_doc_ids": [
+        "doc_962"
+      ],
+      "source_preview": "《塞尔达传说 王国之泪》知识文本 > 4. 主要角色及其特点 > 4.5 普尔亚（Purah） - 希卡族研究员，哈尔诺村研究所所长。 - 提供希卡石板功能升级（如相机、传送标记器等），并协助林克追踪任务。 - 外观因逆老化实验变成少女（实"
+    },
+    {
+      "id": "幻兽帕鲁#doc_975",
+      "game_name": "幻兽帕鲁",
+      "question": "《幻兽帕鲁》的抢先体验版于何时上线？",
+      "reference_answer": "2024年1月19日上线于 Steam 抢先体验 / Xbox Game Preview。",
+      "source_doc_id": "doc_975",
+      "relevant_doc_ids": [
+        "doc_975"
+      ],
+      "source_preview": "《幻兽帕鲁》知识库文本 > 【1】游戏基本信息 - **类型**：开放世界生存制作 + 动作冒险 + 宠物收集/养成/战斗（类宝可梦要素）× 第三人称射击 - **平台**：Steam（PC）、Xbox One、Xbox Series X|"
+    },
+    {
+      "id": "幻兽帕鲁#doc_986",
+      "game_name": "幻兽帕鲁",
+      "question": "在《幻兽帕鲁》中，如何获得突击步枪？",
+      "reference_answer": "突击步枪可通过科技等级25制作获得，所需材料为15铁锭、5碳纤维和电路板；或通过击败黑市商人掉落获得。",
+      "source_doc_id": "doc_986",
+      "relevant_doc_ids": [
+        "doc_986"
+      ],
+      "source_preview": "《幻兽帕鲁》知识库文本 > 【6】重要物品、装备、技能获取方法 > 6.2 武器获取（部分） - **原始长矛**：初始制作（2木头+1石头） - **弓**：科技等级4，制作（10木头+5石头） - **手枪**：科技等级12，制作（5铁"
+    },
+    {
+      "id": "星露谷物语#doc_1111",
+      "game_name": "星露谷物语",
+      "question": "《星露谷物语》在PC平台（Steam）上的具体发行日期是什么？",
+      "reference_answer": "PC（Steam）版本于2016年2月27日发行。",
+      "source_doc_id": "doc_1111",
+      "relevant_doc_ids": [
+        "doc_1111"
+      ],
+      "source_preview": "《星露谷物语》知识文本 > 1. 游戏基本信息 - **游戏类型**：开放世界乡村模拟经营RPG - **平台**：PC（Steam/GOG）、Nintendo Switch、PlayStation 4、Xbox One、iOS、Andro"
+    },
+    {
+      "id": "星露谷物语#doc_1122",
+      "game_name": "星露谷物语",
+      "question": "哪位可婚NPC的性格特点是‘热爱自然、编织、精灵古怪’？",
+      "reference_answer": "艾米丽。",
+      "source_doc_id": "doc_1122",
+      "relevant_doc_ids": [
+        "doc_1122"
+      ],
+      "source_preview": "《星露谷物语》知识文本 > 4. 主要角色及其特点 > 4.1 可婚NPC | 角色 | 性别 | 住址 | 性格特点 | 最爱礼物 | |------|------|------|---------|---------| | 阿比盖尔 |"
+    },
+    {
+      "id": "空洞骑士#doc_997",
+      "game_name": "空洞骑士",
+      "question": "《空洞骑士》是否有付费DLC？",
+      "reference_answer": "没有付费DLC，所有四个DLC（《隐藏的梦》《生命血》《格林剧团》《寻神者》）均为免费更新。",
+      "source_doc_id": "doc_997",
+      "relevant_doc_ids": [
+        "doc_997"
+      ],
+      "source_preview": "《空洞骑士》游戏知识文本 > 1. 游戏基本信息 - **类型**：类银河恶魔城（Metroidvania）动作冒险游戏 - **平台**：PC（Steam/GOG）、Nintendo Switch、PlayStation 4、Xbox O"
+    },
+    {
+      "id": "空洞骑士#doc_1003",
+      "game_name": "空洞骑士",
+      "question": "在《空洞骑士》中，如何释放下劈（Pogo）操作？它有哪些用途？",
+      "reference_answer": "在空中按下+攻击键可释放下劈，能踩敌人或尖刺弹跳。该技巧是核心操作，可用于连续踩敌人、尖刺或钉板，实现无伤和空中移动。",
+      "source_doc_id": "doc_1003",
+      "relevant_doc_ids": [
+        "doc_1003"
+      ],
+      "source_preview": "《空洞骑士》游戏知识文本 > 5. 战斗系统/操作机制 - **基础操作**（以Switch为例，PC键盘/手柄同理）：   - 移动：左摇杆/方向键   - 攻击（骨钉）：ZR键（或键盘X）——可连击三次，第三段有下劈判定   - 下劈（"
+    },
+    {
+      "id": "艾尔登法环#doc_1011",
+      "game_name": "艾尔登法环",
+      "question": "《艾尔登法环》的大型资料片《黄金树之影》的发布日期是哪天？",
+      "reference_answer": "2024年6月21日",
+      "source_doc_id": "doc_1011",
+      "relevant_doc_ids": [
+        "doc_1011"
+      ],
+      "source_preview": "《艾尔登法环》游戏知识库 > 1. 游戏基本信息 - **游戏类型**：动作角色扮演游戏（ARPG），开放世界 - **开发商**：FromSoftware - **发行商**：万代南梦宫娱乐（Bandai Namco Entertainm"
+    },
+    {
+      "id": "艾尔登法环#doc_1021",
+      "game_name": "艾尔登法环",
+      "question": "在《艾尔登法环》中，玩家初始有几个护符槽？最多可解锁几个？如何解锁？",
+      "reference_answer": "初始有1个护符槽，最多可解锁4个。通过击杀特定Boss或拾取护符皮袋来解锁更多护符槽。",
+      "source_doc_id": "doc_1021",
+      "relevant_doc_ids": [
+        "doc_1021"
+      ],
+      "source_preview": "《艾尔登法环》游戏知识库 > 3. 核心玩法机制 > 3.6 护符系统 - **护符槽**：初始1个，随游戏进度最多可解锁4个（通过击杀特定Boss或拾取护符皮袋）。 - **护符种类**：加成属性（如“拉达冈的烙印”提高HP/负重等）、抗"
+    },
+    {
+      "id": "英雄联盟#doc_1032",
+      "game_name": "英雄联盟",
+      "question": "《英雄联盟》的国服代理是哪家公司？",
+      "reference_answer": "《英雄联盟》国服于2011年9月22日上线，由腾讯代理。",
+      "source_doc_id": "doc_1032",
+      "relevant_doc_ids": [
+        "doc_1032"
+      ],
+      "source_preview": "《英雄联盟》游戏知识库 > 1. 游戏基本信息 - **类型**：多人在线战术竞技（MOBA） - **平台**：Microsoft Windows、macOS（macOS版于2023年停止更新，仅保留Windows版） - **开发商**"
+    },
+    {
+      "id": "英雄联盟#doc_1039",
+      "game_name": "英雄联盟",
+      "question": "在《英雄联盟》中，补刀（Last Hit）的经济收益是什么？",
+      "reference_answer": "对小兵造成最后一击可获得全额金币，否则只有少量经验。补刀是经济基础，高手通常补刀数每分钟8-10个。",
+      "source_doc_id": "doc_1039",
+      "relevant_doc_ids": [
+        "doc_1039"
+      ],
+      "source_preview": "【《英雄联盟》游戏知识库 > 5. 战斗系统/操作机制】 银饰带解除。 - **生命/资源**：每个英雄有生命值（HP）、法力值/能量/怒气等资源（AD英雄大多无蓝条）。血条下方有黄条表示能量/怒气等。生命归零则死亡，复活时间随等级增加（前"
+    },
+    {
+      "id": "赛博朋克2077#doc_1046",
+      "game_name": "赛博朋克2077",
+      "question": "《赛博朋克2077》的大型资料片《往日之影》于何时登陆所有平台？",
+      "reference_answer": "大型资料片《往日之影》（Phantom Liberty）于2023年9月26日登陆所有平台。",
+      "source_doc_id": "doc_1046",
+      "relevant_doc_ids": [
+        "doc_1046"
+      ],
+      "source_preview": "《赛博朋克2077》游戏知识库 > 【一、游戏基本信息】 - **游戏类型**：开放世界第一人称角色扮演游戏（RPG），融合动作、射击、驾驶、黑客、潜行等元素。 - **发行平台**：PC（Windows）、PlayStation 4/5、"
+    },
+    {
+      "id": "赛博朋克2077#doc_1052",
+      "game_name": "赛博朋克2077",
+      "question": "在《赛博朋克2077》中，强尼·银手这一角色由哪位演员饰演并配音？",
+      "reference_answer": "强尼·银手由基努·里维斯饰演并配音。",
+      "source_doc_id": "doc_1052",
+      "relevant_doc_ids": [
+        "doc_1052"
+      ],
+      "source_preview": "【《赛博朋克2077》游戏知识库 > 【四、主要角色及其特点】】 - **V（主角）**：可自定义性别、外貌、出身、声音。雇佣兵，为生存和揭露真相不断挣扎。性格由玩家选择决定，但核心台词由配音演员演绎（男V：中文配音刘北辰；女V：中文配音谢"
+    },
+    {
+      "id": "黑神话悟空#doc_1059",
+      "game_name": "黑神话悟空",
+      "question": "《黑神话：悟空》的发行日期和标准版定价是多少？",
+      "reference_answer": "发行日期为2024年8月20日（全球同步），标准版定价268元人民币（Steam国区）。",
+      "source_doc_id": "doc_1059",
+      "relevant_doc_ids": [
+        "doc_1059"
+      ],
+      "source_preview": "《黑神话：悟空》游戏知识文本 > 1. 游戏基本信息 - **类型**：动作角色扮演游戏（ARPG），类魂系（Souls-like）风格，融合中国神话元素   - **平台**：PC（Steam、Epic Games Store、WeGam"
+    },
+    {
+      "id": "黑神话悟空#doc_1071",
+      "game_name": "黑神话悟空",
+      "question": "在《黑神话：悟空》中，如何获得法宝“芭蕉扇”？它的效果是什么？",
+      "reference_answer": "在火焰山战胜铁扇公主（需破盾两次）后获得。效果：扇形AOE风属性伤害，击退敌人并吹飞投射物，冷却45秒。",
+      "source_doc_id": "doc_1071",
+      "relevant_doc_ids": [
+        "doc_1071"
+      ],
+      "source_preview": "《黑神话：悟空》游戏知识文本 > 6. 重要物品、装备、技能的获取方法 > 6.3 法宝获取 - **芭蕉扇**：火焰山战胜铁扇公主后（需破盾两次），法宝效果：扇形AOE风属性伤害，击退敌人并吹飞投射物，冷却45秒。   - **紫金铃**"
+    }
+  ]
+}

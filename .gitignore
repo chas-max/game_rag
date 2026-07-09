@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.claude/
+
+# 评测指标日志(本地 append-only 产物,避免多人冲突;测试集 benchmark.json 需提交以保证版本对比一致)
+eval/*.xlsx
+
+# ChromaDB 向量库持久化(可由 scripts/migrate_to_chroma.py 从 SQLite 重建)
+data/chroma/
+
+# SQLite WAL 文件(运行时临时文件)
+data/*.db-shm
+data/*.db-wal

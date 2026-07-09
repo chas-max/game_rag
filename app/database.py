@@ -1,4 +1,9 @@
-"""SQLite persistence layer — schema, CRUD, and vector similarity search."""
+"""Persistence layer.
+
+关系数据(conversations / messages / scraping_tasks / pending_queries / knowledge_logs)
+存 SQLite;向量数据(documents / semantic_chunks 的 embedding 与相似度检索)存 ChromaDB,
+委托 app.vector_store。对外接口与返回结构保持不变,上层无感。
+"""
 
 import json
 import os
@@ -7,6 +12,7 @@ from typing import Any
 
 import numpy as np
 
+from app import vector_store as vs
 from config import settings
 
 _db: sqlite3.Connection | None = None
@@ -31,18 +37,6 @@ CREATE TABLE IF NOT EXISTS messages (
     sources TEXT,
     created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS documents (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    game_name TEXT NOT NULL,
-    title TEXT,
-    url TEXT,
-    source_name TEXT,
-    content TEXT NOT NULL,
-    embedding BLOB NOT NULL,
-    chunk_index INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS scraping_tasks (
@@ -80,25 +74,12 @@ CREATE TABLE IF NOT EXISTS knowledge_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_documents_game ON documents(game_name);
-CREATE INDEX IF NOT EXISTS idx_documents_url ON documents(url);
 CREATE INDEX IF NOT EXISTS idx_scraping_tasks_game ON scraping_tasks(game_name);
 CREATE INDEX IF NOT EXISTS idx_pending_queries_status ON pending_queries(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_pending_queries_game ON pending_queries(game_name);
 
--- 语义句子切割表，用于细粒度向量相似度匹配
-CREATE TABLE IF NOT EXISTS semantic_chunks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    document_id INTEGER NOT NULL,
-    game_name TEXT NOT NULL,
-    content TEXT NOT NULL,
-    embedding BLOB NOT NULL,
-    tag TEXT,
-    created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_semantic_chunks_doc ON semantic_chunks(document_id);
-CREATE INDEX IF NOT EXISTS idx_semantic_chunks_game ON semantic_chunks(game_name);
+-- 注: documents / semantic_chunks 的向量与正文已迁至 ChromaDB(app.vector_store)。
+-- 旧 SQLite 库中若仍存在这两张表,不影响新流程(保留作备份,可手动 DROP)。
 """
 
 
@@ -213,7 +194,7 @@ def get_messages(conv_id: int, limit: int = 10) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-# ── Document CRUD ──────────────────────────────────────────────────
+# ── Document CRUD (委托 ChromaDB) ──────────────────────────────────
 
 def insert_document(
     game_name: str,
@@ -223,15 +204,11 @@ def insert_document(
     url: str | None = None,
     source_name: str | None = None,
     chunk_index: int = 0,
-) -> int:
-    db = get_db()
-    cur = db.execute(
-        """INSERT INTO documents (game_name, title, url, source_name, content, embedding, chunk_index)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (game_name, title, url, source_name, content, embedding.astype(np.float32).tobytes(), chunk_index),
+) -> str:
+    """存储单个 parent chunk 到 ChromaDB,返回 doc id(字符串)。"""
+    return vs.insert_document(
+        game_name, content, embedding, title=title, url=url, source_name=source_name, chunk_index=chunk_index
     )
-    db.commit()
-    return cur.lastrowid
 
 
 async def store_documents_with_semantic_chunks(
@@ -243,104 +220,62 @@ async def store_documents_with_semantic_chunks(
     source_name: str | None = None,
 ) -> int:
     """
-    批量存储固定长度分块(documents)及其对应的所有语义句切分块(semantic_chunks)。
-    在内部对所有切分的单句进行批量向量嵌入，提升导入性能。
+    批量存储固定长度分块(documents)及其对应的所有语义句切分块(semantic_chunks)到 ChromaDB。
+    在内部对所有切分的单句进行批量向量嵌入,提升导入性能。
     """
     import asyncio
     from app.embedding import encode_batch
     from app.scraper import parse_chunk_sentences
 
-    # 1. 存储 Parent Chunks (documents)
-    doc_ids = []
-    for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
-        doc_id = insert_document(
-            game_name=game_name,
-            content=chunk,
-            embedding=emb,
-            title=title,
-            url=url,
-            source_name=source_name,
-            chunk_index=i,
-        )
-        doc_ids.append(doc_id)
+    # 1. 批量存储 Parent Chunks,拿到 doc id 列表(chunk_index = 位置序号)
+    doc_ids = vs.add_documents(
+        game_name, chunks, embeddings, title=title, url=url, source_name=source_name
+    )
 
-    # 2. 从每一个 Parent Chunk 中解析出语义句子
+    # 2. 从每个 Parent Chunk 解析语义句子,绑定其 doc id
     all_sentences = []
     for chunk, doc_id in zip(chunks, doc_ids):
-        sentences = parse_chunk_sentences(chunk)
-        for s in sentences:
+        for s in parse_chunk_sentences(chunk):
             s["document_id"] = doc_id
             all_sentences.append(s)
 
-    # 3. 批量生成语义句子的 Embedding 并写入 semantic_chunks
+    # 3. 批量生成语义句 Embedding 并写入 semantic_chunks collection
     if all_sentences:
         loop = asyncio.get_running_loop()
         sentence_texts = [s["content"] for s in all_sentences]
         sentence_embs = await loop.run_in_executor(None, encode_batch, sentence_texts)
-
-        for s, s_emb in zip(all_sentences, sentence_embs):
-            insert_semantic_chunk(
-                document_id=s["document_id"],
-                game_name=game_name,
-                content=s["content"],
-                embedding=s_emb,
-                tag=s["tag"],
-            )
+        vs.add_semantics(game_name, all_sentences, sentence_embs)
 
     return len(chunks)
 
 
 def get_documents_by_game(game_name: str) -> list[dict]:
-    """Return metadata-only document rows (no embedding blob) for a game."""
-    db = get_db()
-    rows = db.execute(
-        "SELECT id, game_name, title, url, source_name, content, chunk_index, created_at "
-        "FROM documents WHERE game_name = ? ORDER BY chunk_index",
-        (game_name,),
-    ).fetchall()
-    return [dict(r) for r in rows]
+    """Return metadata-only document rows (no embedding) for a game."""
+    return vs.get_documents_by_game(game_name)
 
 
 def delete_documents_by_game(game_name: str) -> int:
-    db = get_db()
-    cur = db.execute("DELETE FROM documents WHERE game_name = ?", (game_name,))
-    db.commit()
-    return cur.rowcount
+    return vs.delete_documents_by_game(game_name)
 
 
 def delete_documents_by_url(url: str) -> int:
-    db = get_db()
-    cur = db.execute("DELETE FROM documents WHERE url = ?", (url,))
-    db.commit()
-    return cur.rowcount
+    return vs.delete_documents_by_url(url)
 
 
 def list_games() -> list[dict]:
-    db = get_db()
-    rows = db.execute(
-        "SELECT game_name, COUNT(*) AS document_count FROM documents "
-        "GROUP BY game_name ORDER BY game_name"
-    ).fetchall()
-    return [dict(r) for r in rows]
+    return vs.list_games()
 
 
 def get_document_count_for_game(game_name: str) -> int:
     """Return the number of document chunks stored for a game."""
-    db = get_db()
-    row = db.execute(
-        "SELECT COUNT(*) AS cnt FROM documents WHERE game_name = ?", (game_name,)
-    ).fetchone()
-    return row["cnt"] if row else 0
+    return vs.get_document_count_for_game(game_name)
 
 
 def get_knowledge_stats() -> dict:
     """Return aggregate statistics about the knowledge base."""
+    games = vs.list_games()
+    total_docs = vs.count_documents()
     db = get_db()
-    games = db.execute(
-        "SELECT game_name, COUNT(*) AS document_count FROM documents "
-        "GROUP BY game_name ORDER BY document_count DESC"
-    ).fetchall()
-    total_docs = db.execute("SELECT COUNT(*) AS cnt FROM documents").fetchone()["cnt"]
     pending = db.execute(
         "SELECT COUNT(*) AS cnt FROM pending_queries WHERE status = 'pending'"
     ).fetchone()["cnt"]
@@ -348,70 +283,8 @@ def get_knowledge_stats() -> dict:
         "total_games": len(games),
         "total_documents": total_docs,
         "pending_queries": pending,
-        "games": [dict(g) for g in games],
+        "games": games,
     }
-
-
-# ── Vector Similarity Search ───────────────────────────────────────
-
-def search_similar(
-    query_embedding: np.ndarray,
-    game_name: str,
-    top_k: int = 5,
-    threshold: float | None = None,
-) -> list[dict]:
-    """
-    Search for documents most similar to query_embedding, filtered by game_name.
-
-    Uses numpy cosine similarity over all documents for the given game.
-    Returns up to top_k results with similarity >= threshold.
-    """
-    if threshold is None:
-        threshold = settings.similarity_threshold
-
-    db = get_db()
-    rows = db.execute(
-        "SELECT id, content, embedding, title, url, source_name, chunk_index "
-        "FROM documents WHERE game_name = ?",
-        (game_name,),
-    ).fetchall()
-
-    if not rows:
-        return []
-
-    # Reconstruct embeddings matrix
-    embeddings = np.array([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows])
-
-    # Cosine similarity
-    query_norm = query_embedding / (np.linalg.norm(query_embedding) + 1e-10)
-    doc_norms = embeddings / (np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-10)
-    similarities = np.dot(doc_norms, query_norm)
-
-    # Top-k indices sorted by similarity descending
-    if len(similarities) <= top_k:
-        top_indices = np.argsort(similarities)[::-1]
-    else:
-        top_indices = np.argpartition(similarities, -top_k)[-top_k:]
-        top_indices = top_indices[np.argsort(similarities[top_indices])[::-1]]
-
-    # Filter by threshold
-    results = []
-    for idx in top_indices:
-        sim = float(similarities[idx])
-        if sim < threshold:
-            continue
-        row = rows[idx]
-        results.append({
-            "id": row["id"],
-            "content": row["content"],
-            "title": row["title"],
-            "url": row["url"],
-            "source_name": row["source_name"],
-            "similarity": round(sim, 4),
-            "chunk_index": row["chunk_index"],
-        })
-
-    return results
 
 
 # ── Scraping Task CRUD ─────────────────────────────────────────────
@@ -556,23 +429,17 @@ def list_knowledge_logs(limit: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-# ── Semantic Chunks CRUD & Similarity Search ───────────────────────
+# ── Semantic Chunks: 向量检索与上下文窗口 (委托 ChromaDB) ──────────
 
 def insert_semantic_chunk(
-    document_id: int,
+    document_id: str,
     game_name: str,
     content: str,
     embedding: np.ndarray,
     tag: str | None = None,
-) -> int:
-    db = get_db()
-    cur = db.execute(
-        """INSERT INTO semantic_chunks (document_id, game_name, content, embedding, tag)
-           VALUES (?, ?, ?, ?, ?)""",
-        (document_id, game_name, content, embedding.astype(np.float32).tobytes(), tag),
-    )
-    db.commit()
-    return cur.lastrowid
+) -> str:
+    """存储单条语义句到 ChromaDB,返回 sem id。document_id 为 parent doc 的字符串 id。"""
+    return vs.insert_semantic_chunk(document_id, game_name, content, embedding, tag=tag)
 
 
 def search_similar_semantic(
@@ -582,79 +449,15 @@ def search_similar_semantic(
     threshold: float | None = None,
 ) -> list[dict]:
     """
-    Search for semantic sentences most similar to query_embedding, filtered by game_name.
-    Uses numpy cosine similarity over all semantic chunks for the given game.
+    在 semantic_chunks collection 中按向量相似度检索,filtered by game_name。
+    返回 [{id, document_id, content, tag, similarity}],与旧 numpy 实现结构一致。
     """
-    if threshold is None:
-        threshold = settings.similarity_threshold
-
-    db = get_db()
-    rows = db.execute(
-        "SELECT id, document_id, content, embedding, tag "
-        "FROM semantic_chunks WHERE game_name = ?",
-        (game_name,),
-    ).fetchall()
-
-    if not rows:
-        return []
-
-    # Reconstruct embeddings matrix
-    embeddings = np.array([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows])
-
-    # Cosine similarity
-    query_norm = query_embedding / (np.linalg.norm(query_embedding) + 1e-10)
-    doc_norms = embeddings / (np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-10)
-    similarities = np.dot(doc_norms, query_norm)
-
-    # Top-k indices sorted by similarity descending
-    if len(similarities) <= top_k:
-        top_indices = np.argsort(similarities)[::-1]
-    else:
-        top_indices = np.argpartition(similarities, -top_k)[-top_k:]
-        top_indices = top_indices[np.argsort(similarities[top_indices])[::-1]]
-
-    results = []
-    for idx in top_indices:
-        sim = float(similarities[idx])
-        if sim < threshold:
-            continue
-        row = rows[idx]
-        results.append({
-            "id": row["id"],
-            "document_id": row["document_id"],
-            "content": row["content"],
-            "tag": row["tag"],
-            "similarity": round(sim, 4),
-        })
-
-    return results
+    return vs.search_similar_semantic(query_embedding, game_name, top_k=top_k, threshold=threshold)
 
 
-def get_document_with_context(doc_id: int) -> list[dict]:
+def get_document_with_context(doc_id) -> list[dict]:
     """
     Retrieve the specified parent document along with its immediate surrounding context
     (previous and next chunks of the same game based on chunk_index).
     """
-    db = get_db()
-    target = db.execute(
-        "SELECT game_name, chunk_index, url, source_name, title FROM documents WHERE id = ?",
-        (doc_id,)
-    ).fetchone()
-    
-    if not target:
-        return []
-
-    game_name = target["game_name"]
-    chunk_index = target["chunk_index"]
-
-    # Retrieve chunks with index in [chunk_index - 1, chunk_index + 1]
-    rows = db.execute(
-        """SELECT id, content, title, url, source_name, chunk_index
-           FROM documents
-           WHERE game_name = ? AND chunk_index BETWEEN ? AND ?
-           ORDER BY chunk_index""",
-        (game_name, chunk_index - 1, chunk_index + 1)
-    ).fetchall()
-
-    return [dict(r) for r in rows]
-
+    return vs.get_document_with_context(doc_id)

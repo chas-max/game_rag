@@ -16,8 +16,11 @@ class Settings:
     # Embedding Model
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
 
-    # Database
+    # Database (关系数据: 对话/消息/任务/日志)
     database_path: str = os.getenv("DATABASE_PATH", "data/game_rag.db")
+
+    # Vector Store (ChromaDB) - RAG 向量存储与相似度检索
+    chroma_path: str = os.getenv("CHROMA_PATH", "data/chroma")
 
     # RAG Settings
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "500"))
