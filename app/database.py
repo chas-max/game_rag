@@ -25,7 +25,7 @@ def _to_list(vec) -> list[float]:
         return vec.tolist()
     return list(vec)
 
-# 鈹€鈹€ Conversation CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── Conversation CRUD ──────────────────────────────────────────────
 
 def create_conversation(game_name: str, title: str = "New Conversation") -> dict:
     coll = vs.get_collection(vs.CONV_COLLECTION)
@@ -141,7 +141,7 @@ def delete_conversation(conv_id: str) -> bool:
     return False
 
 
-# 鈹€鈹€ Message CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── Message CRUD ───────────────────────────────────────────────────
 
 def save_message(conv_id: str, role: str, content: str, sources: str | None = None) -> dict:
     coll = vs.get_collection(vs.MSG_COLLECTION)
@@ -175,7 +175,7 @@ def get_messages(conv_id: str, limit: int = 10) -> list[dict]:
     return list(reversed(msgs[:limit]))
 
 
-# 鈹€鈹€ Document CRUD (Delegated to vs) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── Document CRUD (Delegated to vs) ──────────────────────────────────
 
 def insert_document(*args, **kwargs) -> str:
     return vs.insert_document(*args, **kwargs)
@@ -240,7 +240,7 @@ def get_knowledge_stats() -> dict:
         "games": games,
     }
 
-# 鈹€鈹€ Scraping Task CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── Scraping Task CRUD ─────────────────────────────────────────────
 
 def create_scraping_task(
     game_name: str,
@@ -304,7 +304,7 @@ def delete_scraping_task(task_id: str) -> bool:
         return True
     return False
 
-# 鈹€鈹€ Pending Queries CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── Pending Queries CRUD ───────────────────────────────────────────
 
 def add_pending_query(game_name: str, question: str) -> str:
     coll = vs.get_collection(vs.PENDING_COLLECTION)
@@ -376,7 +376,7 @@ def delete_pending_query(query_id: str) -> bool:
         return True
     return False
 
-# 鈹€鈹€ Knowledge Logs CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── Knowledge Logs CRUD ────────────────────────────────────────────
 
 def add_knowledge_log(
     action: str,
@@ -415,7 +415,7 @@ def list_knowledge_logs(limit: int = 20) -> list[dict]:
     logs.sort(key=lambda x: x["created_at"], reverse=True)
     return logs[:limit]
 
-# 鈹€鈹€ Cache CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── Cache CRUD ─────────────────────────────────────────────────────
 
 def set_query_cache(query_hash: str, game_name: str, response: str, query_text: str, query_embedding: list[float] | None = None):
     coll = vs.get_collection(vs.CACHE_COLLECTION)
@@ -463,7 +463,7 @@ def get_semantic_query_cache(query_embedding: list[float], game_name: str, thres
         pass
     return None
 
-# 鈹€鈹€ User Memory CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── User Memory CRUD ───────────────────────────────────────────────
 
 def add_user_memory(fact: str, embedding: list[float]):
     coll = vs.get_collection(vs.MEMORY_COLLECTION)
@@ -494,7 +494,7 @@ def get_user_memories(query_embedding: list[float] | None = None, top_k: int = 5
         pass
     return []
 
-# 鈹€鈹€ Semantic Chunks 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── Semantic Chunks ──────────────────────────────────────────
 
 def insert_semantic_chunk(*args, **kwargs) -> str:
     return vs.insert_semantic_chunk(*args, **kwargs)

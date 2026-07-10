@@ -106,55 +106,71 @@ async def _llm_chat(prompt: str, max_tokens: int = 2000, temperature: float = 0.
     return ""
 
 
-SYSTEM_PROMPT = """浣犳槸涓€涓笓涓氱殑娓告垙淇℃伅闂瓟鍔╂墜銆傝鍩轰簬鎻愪緵鐨勫弬鑰冧笂涓嬫枃鍥炵瓟鐢ㄦ埛闂銆?
-瑕佹眰:
-- 缁煎悎鍙傝€冭祫鏂欎腑鐨勪俊鎭?缁欏嚭璇︾粏銆佸噯纭€佺粨鏋勫寲鐨勫洖绛?- 寮曠敤鏉ユ簮鏃朵娇鐢?[1], [2] 绛夋爣璁?- 鍙互瀵规绱㈠埌鐨勯浂鏁ｄ俊鎭繘琛屾暣鍚堛€佽ˉ鍏ㄣ€佷紭鍖?浣垮洖绛旀祦鐣呭畬鏁?- 濡傛灉鍙傝€冭祫鏂欑‘瀹炰笉鍖呭惈鐩稿叧闂绛旀,鍥炲:"褰撳墠鏁版嵁搴撶煡璇嗕笉瓒?鏈兘妫€绱㈠埌浣犳彁闂殑淇℃伅銆?
-- 涓嶈缂栭€犺祫鏂欎腑涓嶅瓨鍦ㄧ殑淇℃伅,鍥炵瓟浣跨敤涓枃"""
+SYSTEM_PROMPT = """你是一个专业的游戏信息问答助手。请基于提供的参考上下文回答用户问题。
 
-KNOWLEDGE_INSUFFICIENT = "褰撳墠鏁版嵁搴撶煡璇嗕笉瓒筹紝鏈兘妫€绱㈠埌浣犳彁闂殑淇℃伅銆?
+要求:
+- 综合参考资料中的信息,给出详细、准确、结构化的回答
+- 引用来源时使用 [1], [2] 等标记
+- 可以对检索到的零散信息进行整合、补全、优化,使回答流畅完整
+- 如果参考资料确实不包含相关问题答案,回复:"当前数据库知识不足,未能检索到你提问的信息。"
+- 不要编造资料中不存在的信息,回答使用中文"""
 
-# 绠＄嚎鐗规€ц嚜鎻忚堪 - 璇勬祴鏃跺啓鍏?config_snapshot,渚夸簬鍖哄垎涓嶅悓鐗堟湰绠＄嚎鐨勬寚鏍囥€?# 鏂板/鍏抽棴鏌愰」妫€绱紭鍖栨椂璇峰悓姝ヤ慨鏀规澶?璁?Excel 閲岀殑鐗堟湰鏍囪鍑嗙‘鍙嶆槧绠＄嚎鐘舵€併€?PIPELINE_FEATURES = {
-    "hyde": True,               # 鍋囪鎬у洖绛旇緟鍔╂绱?(Step 1)
-    "context_window": True,     # 鍙洖鍛戒腑娈佃惤鍙婂叾鍓嶅悗鐩搁偦娈佃惤 (retrieve_with_fallback)
-    "dynamic_threshold": True,  # 鏍囧噯闃堝€兼棤缁撴灉鏃堕檷浣庨槇鍊奸噸璇?}
+KNOWLEDGE_INSUFFICIENT = "当前数据库知识不足，未能检索到你提问的信息。"
+
+# 管线特性自描述 - 评测时写入 config_snapshot,便于区分不同版本管线的指标。
+# 新增/关闭某项检索优化时请同步修改此处,让 Excel 里的版本标记准确反映管线状态。
+PIPELINE_FEATURES = {
+    "hyde": True,               # 假设性回答辅助检索 (Step 1)
+    "context_window": True,     # 召回命中段落及其前后相邻段落 (retrieve_with_fallback)
+    "dynamic_threshold": True,  # 标准阈值无结果时降低阈值重试
+}
 
 
-# 鈹€鈹€ Step 1: 鐢熸垚鍋囪鎬у洖绛?(HyDE) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── Step 1: 生成假设性回答 (HyDE) ──────────────────────────────────
 
 async def generate_hypothetical_answer(game_name: str, user_message: str) -> str:
-    """LLM 鍒嗘瀽闂,鐢熸垚鍋囪鎬у洖绛斻€?
-    鍋囪鎬у洖绛旀槸闄堣堪鍙?璇箟绌洪棿鏇存帴杩戠煡璇嗗簱涓殑鐧剧鏂囨。,
-    鐢ㄥ畠妫€绱㈡瘮鐢ㄥ師濮嬮棶棰樻绱㈠彫鍥炵巼鏇撮珮(HyDE 鍘熺悊)銆?    鍗充娇鍥炵瓟涓嶅噯纭篃鏃犲Θ,鍙渶鍖呭惈鐩稿叧鏈鍜屾蹇点€?    """
-    prompt = f"""鐢ㄦ埛鎯充簡瑙ｆ父鎴忋€妠game_name}銆嬬殑浠ヤ笅闂:
+    """LLM 分析问题,生成假设性回答。
+
+    假设性回答是陈述句,语义空间更接近知识库中的百科文档,
+    用它检索比用原始问题检索召回率更高(HyDE 原理)。
+    即使回答不准确也无妨,只需包含相关术语和概念。
+    """
+    prompt = f"""用户想了解游戏《{game_name}》的以下问题:
 {user_message}
 
-璇峰熀浜庝綘瀵硅繖娆炬父鎴忕殑浜嗚В,鐢熸垚涓€涓畝鐭殑鍋囪鎬у洖绛?150-300瀛?銆?瑕佹眰:
-1. 鍗充娇涓嶇‘瀹氫篃瑕佺粰鍑哄彲鑳界殑绛旀,缁濆涓嶈鎷掔粷鎴栬"鎴戜笉鐭ラ亾"
-2. 鍖呭惈鐩稿叧鐨勬父鎴忔湳璇€佹蹇点€佹満鍒跺悕绉般€佹暟鍊笺€佸湴鐐广€佽鑹插悕
-3. 鐢ㄩ檲杩板彞,鍍忕櫨绉戠煡璇嗘潯鐩竴鏍峰啓浣?4. 杩欎釜鍥炵瓟浠呯敤浜庣煡璇嗗簱妫€绱㈣緟鍔?涓嶉渶瑕佸畬鍏ㄥ噯纭?
-鍋囪鎬у洖绛?"""
+请基于你对这款游戏的了解,生成一个简短的假设性回答(150-300字)。
+要求:
+1. 即使不确定也要给出可能的答案,绝对不要拒绝或说"我不知道"
+2. 包含相关的游戏术语、概念、机制名称、数值、地点、角色名
+3. 用陈述句,像百科知识条目一样写作
+4. 这个回答仅用于知识库检索辅助,不需要完全准确
+
+假设性回答:"""
     return await _llm_chat(prompt, max_tokens=500, temperature=0.5)
 
 
 async def extract_game_name(user_message: str, history_msgs: list[dict]) -> str:
-    """LLM 浠庣敤鎴疯緭鍏ュ拰鍘嗗彶璁板綍涓彁鍙栨父鎴忓悕绉般€?""
-    prompt = f"""璇蜂粠鐢ㄦ埛鐨勬彁闂拰涓婁笅鏂囧巻鍙蹭腑锛屾彁鍙栧嚭鐢ㄦ埛褰撳墠璁ㄨ鐨勫叿浣撴父鎴忓悕绉般€?濡傛灉鏄庣‘鎻愬埌浜嗘煇涓父鎴忓悕绉帮紝鎴栬€呮牴鎹笂涓嬫枃鑳芥槑纭垽鏂槸鍝娓告垙锛岃浠呬粎杈撳嚭璇ユ父鎴忓悕绉帮紙渚嬪锛氬灏旇揪浼犺鏃烽噹涔嬫伅銆佸師绁烇級锛屼笉瑕佸寘鍚换浣曞浣欑殑瀛楄瘝銆佹爣鐐规垨瑙ｉ噴銆?濡傛灉娌℃湁鎻愬埌浠讳綍鍏蜂綋鐨勬父鎴忥紝鎴栬€呮棤娉曠‘瀹氾紝璇风洿鎺ヨ緭鍑?"None"銆?
-鐢ㄦ埛鎻愰棶: {user_message}"""
+    """LLM 从用户输入和历史记录中提取游戏名称。"""
+    prompt = f"""请从用户的提问和上下文历史中，提取出用户当前讨论的具体游戏名称。
+如果明确提到了某个游戏名称，或者根据上下文能明确判断是哪款游戏，请仅仅输出该游戏名称（例如：塞尔达传说旷野之息、原神），不要包含任何多余的字词、标点或解释。
+如果没有提到任何具体的游戏，或者无法确定，请直接输出 "None"。
+
+用户提问: {user_message}"""
     if history_msgs:
-        history_text = "\n".join([f"{'鐢ㄦ埛' if m['role']=='user' else '鍔╂墜'}: {m['content'][:200]}" for m in history_msgs[-3:]])
-        prompt += f"\n\n杩戞湡鍘嗗彶璁板綍:\n{history_text}"
+        history_text = "\n".join([f"{'用户' if m['role']=='user' else '助手'}: {m['content'][:200]}" for m in history_msgs[-3:]])
+        prompt += f"\n\n近期历史记录:\n{history_text}"
         
     extracted = await _llm_chat(prompt, max_tokens=20, temperature=0.0)
     extracted = extracted.strip()
-    if not extracted or extracted.lower() in ("none", "null", "涓嶇煡閬?, "鏈寚瀹?):
+    if not extracted or extracted.lower() in ("none", "null", "不知道", "未指定"):
         return ""
     return extracted
 
 
-# 鈹€鈹€ Step 2: 娣峰悎妫€绱?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── Step 2: 混合检索 ──────────────────────────────────────────────
 
 def merge_and_dedupe(result_lists: list[list[dict]], top_k: int) -> list[dict]:
-    """鍚堝苟澶氳矾妫€绱㈢粨鏋?鎸夋枃妗?id 鍘婚噸,鍙栨瘡绡囨渶楂樼浉浼煎害,鎺掑簭鍚庡彇 top_k銆?""
+    """合并多路检索结果,按文档 id 去重,取每篇最高相似度,排序后取 top_k。"""
     seen: dict[int, dict] = {}
     for results in result_lists:
         for r in results:
@@ -167,7 +183,12 @@ def merge_and_dedupe(result_lists: list[list[dict]], top_k: int) -> list[dict]:
 
 def retrieve_with_fallback(query_vec, game_name: str, top_k: int) -> list[dict]:
     """
-    璇箟浼樺厛 + 涓婁笅鏂囩獥鍙ｆ墿鍏呮绱€?    1. 鍏堝湪 semantic_chunks 琛ㄤ腑鎼滅储璇箟鏈€鐩歌繎鐨勫彞瀛愩€?    2. 濡傛灉浠?settings.similarity_threshold 涓洪槇鍊兼棤缁撴灉锛屽垯闄嶄綆闃堝€奸噸璇曘€?    3. 鑾峰彇鍖归厤鍙ュ瓙鎵€褰掑睘鐨?parent chunk 鍙婂叾鍓嶅悗鐨勭浉閭?chunk (Context Window)銆?    4. 鍚堝苟鐩搁偦 chunk 鐨勬枃鏈紝鍘婚噸锛岀粍瑁呮垚瀹屾暣涓斾笂涓嬫枃杩炶疮鐨勫€欓€夋绱㈢粨鏋溿€?    """
+    语义优先 + 上下文窗口扩充检索。
+    1. 先在 semantic_chunks 表中搜索语义最相近的句子。
+    2. 如果以 settings.similarity_threshold 为阈值无结果，则降低阈值重试。
+    3. 获取匹配句子所归属的 parent chunk 及其前后的相邻 chunk (Context Window)。
+    4. 合并相邻 chunk 的文本，去重，组装成完整且上下文连贯的候选检索结果。
+    """
     threshold = settings.similarity_threshold
     semantic_matches = db.search_similar_semantic(
         query_vec, game_name, top_k=top_k, threshold=threshold
@@ -183,7 +204,8 @@ def retrieve_with_fallback(query_vec, game_name: str, top_k: int) -> list[dict]:
     if not semantic_matches:
         return []
 
-    # 鑱氬悎鐖舵枃妗ｅ苟鎷夊彇涓婁笅鏂囩獥鍙?    seen_parent_ids = set()
+    # 聚合父文档并拉取上下文窗口
+    seen_parent_ids = set()
     results = []
 
     for match in semantic_matches:
@@ -192,18 +214,19 @@ def retrieve_with_fallback(query_vec, game_name: str, top_k: int) -> list[dict]:
             continue
         seen_parent_ids.add(doc_id)
 
-        # 鍙洖璇ユ钀藉強鍏跺墠鍚庣浉閭荤殑娈佃惤
+        # 召回该段落及其前后相邻的段落
         context_docs = db.get_document_with_context(doc_id)
         if not context_docs:
             continue
 
-        # 鎷兼帴娈佃惤鍐呭
+        # 拼接段落内容
         combined_content = "\n\n".join([doc["content"] for doc in context_docs])
 
-        # 鎵惧埌琚懡涓殑涓绘钀?        main_doc = next((d for d in context_docs if d["id"] == doc_id), context_docs[0])
+        # 找到被命中的主段落
+        main_doc = next((d for d in context_docs if d["id"] == doc_id), context_docs[0])
 
-        # 鏋勯€犲彫鍥炴潯鐩紝骞跺姞涓婃爣绛?(tag) 鎻愪緵缁?LLM
-        tag_str = f"銆愪富棰橈細{match['tag']}銆慭n" if match["tag"] else ""
+        # 构造召回条目，并加上标签 (tag) 提供给 LLM
+        tag_str = f"【主题：{match['tag']}】\n" if match["tag"] else ""
         results.append({
             "id": main_doc["id"],
             "content": tag_str + combined_content,
@@ -214,12 +237,12 @@ def retrieve_with_fallback(query_vec, game_name: str, top_k: int) -> list[dict]:
             "chunk_index": main_doc["chunk_index"],
         })
 
-    # 鎸夌浉浼煎害閲嶆柊鎺掑簭
+    # 按相似度重新排序
     results = sorted(results, key=lambda x: x["similarity"], reverse=True)
     return results[:top_k]
 
 
-# 鈹€鈹€ Step 1-2 灏佽: HyDE + 娣峰悎妫€绱?(渚?rag_query 涓庤瘎娴嬪叡鐢? 鈹€鈹€鈹€鈹€鈹€鈹€
+# ── Step 1-2 封装: HyDE + 混合检索 (供 rag_query 与评测共用) ──────
 
 async def retrieve_documents(
     game_name: str,
@@ -227,25 +250,31 @@ async def retrieve_documents(
     progress_callback=None,
     verbose: bool = True,
 ) -> list[dict]:
-    """HyDE + 娣峰悎妫€绱?+ 鍚堝苟鍘婚噸銆?
-    灏佽鍘?rag_query 鐨?Step 1-2(鍋囪鍥炵瓟鐢熸垚 + 鍘熷闂/鍋囪鍥炵瓟鍙岃矾妫€绱?+ 鍘婚噸),
-    **鏃?DB 鍐欏壇浣滅敤**,鏃㈣ rag_query 璋冪敤,涔熻 eval 璇勬祴璋冪敤,
-    淇濊瘉璇勬祴涓庣敓浜ф绱㈤€昏緫鍚屾簮銆佷笉浼氶殢杩唬鑰屽垎鍙夈€?
+    """HyDE + 混合检索 + 合并去重。
+
+    封装原 rag_query 的 Step 1-2(假设回答生成 + 原始问题/假设回答双路检索 + 去重),
+    **无 DB 写副作用**,既被 rag_query 调用,也被 eval 评测调用,
+    保证评测与生产检索逻辑同源、不会随迭代而分叉。
+
     Args:
-        progress_callback: 鍙€?async callable(stage: str, message: str[, content])銆?            瀛樺湪鏃跺湪姣忎釜闃舵璋冪敤,鐢ㄤ簬鎺ㄩ€佸疄鏃惰繘搴?rag_query 浼犲叆鍏?_report 闂寘)銆?        verbose: 鏄惁鎵撳嵃闃舵鏃ュ織銆傜敓浜ц矾寰勪繚鎸?True;璇勬祴鎵归噺璺戞椂浼?False 鍑忓皯鍣０銆?
-    Returns: 鎸夌浉浼煎害闄嶅簭鎺掑垪鐨勬绱㈢粨鏋滃垪琛?姣忎釜鍏冪礌鍚?id/content/similarity/title/url 绛夈€?    """
+        progress_callback: 可选 async callable(stage: str, message: str[, content])。
+            存在时在每个阶段调用,用于推送实时进度(rag_query 传入其 _report 闭包)。
+        verbose: 是否打印阶段日志。生产路径保持 True;评测批量跑时传 False 减少噪声。
+
+    Returns: 按相似度降序排列的检索结果列表,每个元素含 id/content/similarity/title/url 等。
+    """
     async def _report(stage: str, message: str) -> None:
         if progress_callback is not None:
             try:
                 await progress_callback(stage, message)
             except Exception:
-                # 鍥炶皟澶辫触涓嶅簲褰卞搷妫€绱富娴佺▼
+                # 回调失败不应影响检索主流程
                 pass
 
-    # Step 1: LLM 鍒嗘瀽闂,鐢熸垚鍋囪鎬у洖绛?(HyDE)
-    await _report("analyzing", "姝ｅ湪鍒嗘瀽闂锛屾瀯鎬濆亣璁惧洖绛斺€?)
+    # Step 1: LLM 分析问题,生成假设性回答 (HyDE)
+    await _report("analyzing", "正在分析问题，构思假设回答…")
     if verbose:
-        print(f"[rag] Step 1: Generating hypothetical answer for 銆妠game_name}銆?..")
+        print(f"[rag] Step 1: Generating hypothetical answer for 《{game_name}》...")
     hypothetical = await generate_hypothetical_answer(game_name, user_message)
     if verbose:
         if hypothetical:
@@ -253,54 +282,56 @@ async def retrieve_documents(
         else:
             print("[rag] Hypothetical answer generation failed, falling back to query-only retrieval")
 
-    # Step 2: 娣峰悎妫€绱?鍋囪鍥炵瓟 + 鍘熷闂)
-    await _report("retrieving", "姝ｅ湪妫€绱㈢煡璇嗗簱锛屽尮閰嶇浉鍏冲唴瀹光€?)
+    # Step 2: 混合检索(假设回答 + 原始问题)
+    await _report("retrieving", "正在检索知识库，匹配相关内容…")
     if verbose:
         print("[rag] Step 2: Hybrid retrieval (HyDE + original query)...")
     result_lists = []
 
-    # 2a. 鍘熷闂妫€绱?    query_vec = encode_text(user_message)
+    # 2a. 原始问题检索
+    query_vec = encode_text(user_message)
     result_lists.append(retrieve_with_fallback(query_vec, game_name, settings.top_k))
 
-    # 2b. 鍋囪鍥炵瓟妫€绱?濡傛灉鐢熸垚鎴愬姛)
+    # 2b. 假设回答检索(如果生成成功)
     if hypothetical:
         hyde_vec = encode_text(hypothetical)
         result_lists.append(retrieve_with_fallback(hyde_vec, game_name, settings.top_k))
 
-    # 鍚堝苟鍘婚噸
+    # 合并去重
     retrieved = merge_and_dedupe(result_lists, settings.top_k)
     if verbose:
         print(f"[rag] Retrieved {len(retrieved)} unique documents after merge")
     return retrieved
 
 
-# 鈹€鈹€ Step 5: LLM 浼樺寲鐢熸垚鏈€缁堝洖绛?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── Step 5: LLM 优化生成最终回答 ───────────────────────────────────
 
 async def generate_final_answer(
     user_message: str,
     retrieved: list[dict],
     history_msgs: list[dict],
 ) -> str:
-    """LLM 鍩轰簬妫€绱㈢粨鏋滀紭鍖栫敓鎴愭渶缁堝洖绛斻€?""
-    # 鏋勫缓涓婁笅鏂?    context_parts = []
+    """LLM 基于检索结果优化生成最终回答。"""
+    # 构建上下文
+    context_parts = []
     for i, doc in enumerate(retrieved):
-        title = doc.get("title") or "鏈懡鍚?
+        title = doc.get("title") or "未命名"
         url = doc.get("url") or ""
-        context_parts.append(f"[鏉ユ簮{i+1}: {title} ({url})]\n{doc['content']}")
+        context_parts.append(f"[来源{i+1}: {title} ({url})]\n{doc['content']}")
 
-    # 鏋勫缓鍘嗗彶
+    # 构建历史
     history_parts = []
     for msg in history_msgs:
-        role_label = "鐢ㄦ埛" if msg["role"] == "user" else "鍔╂墜"
+        role_label = "用户" if msg["role"] == "user" else "助手"
         history_parts.append(f"{role_label}: {msg['content']}")
 
-    # 缁勮 prompt
+    # 组装 prompt
     full_prompt = SYSTEM_PROMPT
     if context_parts:
-        full_prompt += "\n\n鍙傝€冧笂涓嬫枃:\n" + "\n\n".join(context_parts)
+        full_prompt += "\n\n参考上下文:\n" + "\n\n".join(context_parts)
     if history_parts:
-        full_prompt += "\n\n瀵硅瘽鍘嗗彶:\n" + "\n".join(history_parts)
-    full_prompt += f"\n\n鐢ㄦ埛闂: {user_message}\n鍥炵瓟(涓枃,寮曠敤鏉ユ簮璇锋爣娉ㄧ紪鍙?:"
+        full_prompt += "\n\n对话历史:\n" + "\n".join(history_parts)
+    full_prompt += f"\n\n用户问题: {user_message}\n回答(中文,引用来源请标注编号):"
 
     answer = await _llm_chat(full_prompt, max_tokens=2000, temperature=0.3)
     return answer if answer else KNOWLEDGE_INSUFFICIENT
@@ -312,26 +343,27 @@ async def generate_final_answer_stream(
     history_msgs: list[dict],
     on_token_callback=None,
 ) -> str:
-    """LLM 鍩轰簬妫€绱㈢粨鏋滀紭鍖栫敓鎴愭渶缁堝洖绛旓紝鏀寔娴佸紡杈撳嚭銆?""
-    # 鏋勫缓涓婁笅鏂?    context_parts = []
+    """LLM 基于检索结果优化生成最终回答，支持流式输出。"""
+    # 构建上下文
+    context_parts = []
     for i, doc in enumerate(retrieved):
-        title = doc.get("title") or "鏈懡鍚?
+        title = doc.get("title") or "未命名"
         url = doc.get("url") or ""
-        context_parts.append(f"[鏉ユ簮{i+1}: {title} ({url})]\n{doc['content']}")
+        context_parts.append(f"[来源{i+1}: {title} ({url})]\n{doc['content']}")
 
-    # 鏋勫缓鍘嗗彶
+    # 构建历史
     history_parts = []
     for msg in history_msgs:
-        role_label = "鐢ㄦ埛" if msg["role"] == "user" else "鍔╂墜"
+        role_label = "用户" if msg["role"] == "user" else "助手"
         history_parts.append(f"{role_label}: {msg['content']}")
 
-    # 缁勮 prompt
+    # 组装 prompt
     full_prompt = SYSTEM_PROMPT
     if context_parts:
-        full_prompt += "\n\n鍙傝€冧笂涓嬫枃:\n" + "\n\n".join(context_parts)
+        full_prompt += "\n\n参考上下文:\n" + "\n\n".join(context_parts)
     if history_parts:
-        full_prompt += "\n\n瀵硅瘽鍘嗗彶:\n" + "\n".join(history_parts)
-    full_prompt += f"\n\n鐢ㄦ埛闂: {user_message}\n鍥炵瓟(涓枃,寮曠敤鏉ユ簮璇锋爣娉ㄧ紪鍙?:"
+        full_prompt += "\n\n对话历史:\n" + "\n".join(history_parts)
+    full_prompt += f"\n\n用户问题: {user_message}\n回答(中文,引用来源请标注编号):"
 
     client = _get_default_client()
     answer_chunks = []
@@ -367,7 +399,7 @@ async def generate_final_answer_stream(
     return KNOWLEDGE_INSUFFICIENT
 
 
-# 鈹€鈹€ 涓绘祦绋?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── 主流程 ─────────────────────────────────────────────────────────
 
 
 SYSTEM_PROMPT_TEMPLATE = """你是一个专业的游戏信息问答助手。你配备了工具，可以检索本地游戏知识库、搜索互联网或保存用户的长期记忆。
@@ -405,31 +437,47 @@ async def rag_query(
             except Exception:
                 pass
 
-    # 1. 妫€鏌ョ簿纭紦瀛?    query_hash = _get_query_hash(user_message, game_name)
+    # 0. 尝试提取游戏名
+    history_msgs = db.get_messages(conversation_id, limit=settings.max_history_messages)
+    if not game_name or game_name == "":
+        extracted_game = await extract_game_name(user_message, history_msgs)
+        if extracted_game:
+            game_name = extracted_game
+            db.update_conversation_game(conversation_id, game_name)
+        else:
+            conv = db.get_conversation(conversation_id)
+            if conv and conv.get("game_name"):
+                game_name = conv["game_name"]
+            else:
+                game_name = ""
+
+    # 1. 检查精确缓存
+    query_hash = _get_query_hash(user_message, game_name)
     exact_hit = db.get_exact_query_cache(user_message, game_name)
     if exact_hit:
-        await _report("cached", "鍛戒腑绮剧‘缂撳瓨锛岀洿鎺ヨ繑鍥炪€?)
+        await _report("cached", "命中精确缓存，直接返回。")
         db.save_message(conversation_id, "user", user_message, None)
         db.save_message(conversation_id, "assistant", exact_hit, "[]")
         db.update_conversation_timestamp(conversation_id)
         return {"answer": exact_hit, "sources": [], "conversation_id": conversation_id}
 
-    # 2. 妫€鏌ヨ涔夌紦瀛?    query_vec = encode_text(user_message)
+    # 2. 检查语义缓存
+    query_vec = encode_text(user_message)
     semantic_hit = db.get_semantic_query_cache(query_vec, game_name, threshold=0.85)
     if semantic_hit:
-        await _report("cached", "鍛戒腑璇箟缂撳瓨锛岀洿鎺ヨ繑鍥炪€?)
+        await _report("cached", "命中语义缓存，直接返回。")
         db.save_message(conversation_id, "user", user_message, None)
         db.save_message(conversation_id, "assistant", semantic_hit, "[]")
         db.update_conversation_timestamp(conversation_id)
         return {"answer": semantic_hit, "sources": [], "conversation_id": conversation_id}
 
-    # 3. 鍑嗗 Agent 杩愯
+    # 3. 准备 Agent 运行
     db.save_message(conversation_id, "user", user_message, None)
     history_msgs = db.get_messages(conversation_id, limit=settings.max_history_messages)
     
-    # 鎻愬彇闀挎湡璁板繂
+    # 提取长期记忆
     memories = db.get_user_memories(query_vec, top_k=5)
-    memory_text = "\n".join([f"- {m}" for m in memories]) if memories else "鏆傛棤璁板綍銆?
+    memory_text = "\n".join([f"- {m}" for m in memories]) if memories else "暂无记录。"
     
     system_prompt = SYSTEM_PROMPT_TEMPLATE.replace("{user_memory_context}", memory_text)
     
@@ -457,7 +505,7 @@ async def rag_query(
                 report_callback=_report
             )
         except Exception as e:
-            final_answer = f"澶фā鍨嬭皟鐢ㄥけ璐ワ紝宸插皾璇曢檷绾ф満鍒跺叏閮ㄥけ璐? {str(e)}"
+            final_answer = f"大模型调用失败，已尝试降级机制全部失败: {str(e)}"
             break
             
         choice = response.choices[0]
@@ -474,7 +522,7 @@ async def rag_query(
                 except json.JSONDecodeError:
                     args = {}
                 
-                await _report("tool_call", f"姝ｅ湪浣跨敤宸ュ叿锛歿fn_name}...")
+                await _report("tool_call", f"正在使用工具：{fn_name}...")
                 print(f"[agent] Calling tool {fn_name} with args {args}")
                 
                 tool_result = await execute_tool(fn_name, args)
@@ -491,10 +539,10 @@ async def rag_query(
             break
 
     if loop_count >= max_loops and not final_answer:
-        final_answer = "鎬濊€冭繃绋嬭繃闀匡紝鏈兘寰楀嚭鏈€缁堢粨璁恒€?
+        final_answer = "思考过程过长，未能得出最终结论。"
 
     # Stream the final answer if needed (we'll just report it as a chunk for now)
-    await _report("generating", "鐢熸垚瀹屾瘯銆?, content=final_answer)
+    await _report("generating", "生成完毕。", content=final_answer)
 
     # Cache the result
     db.set_query_cache(query_hash, game_name, final_answer, user_message, query_vec)
