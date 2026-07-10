@@ -16,31 +16,22 @@ from openpyxl import Workbook, load_workbook
 
 # ── 列定义(顺序即 Excel 列顺序) ─────────────────────────────────────
 
-# runs sheet: 版本标记 + 汇总检索指标 + 汇总生成指标
+# runs sheet: 版本标记 + 核心指标
 RUNS_COLUMNS = [
     # 版本标记
     "run_id", "version_label", "run_time", "git_commit", "git_dirty",
     "benchmark_id", "config_snapshot", "note", "with_generation",
     # 规模
     "n_queries",
-    # 检索指标(主 k = 生产 top_k;另含固定 k=5/1 便于跨版本对比)
-    "recall@topk", "precision@topk", "hitrate@topk", "mrr", "ndcg@topk", "map",
-    "recall@5", "hitrate@5", "ndcg@5", "recall@1",
-    "avg_top1_sim", "avg_sim", "insufficient_rate",
-    # 系统指标
-    "retrieval_latency_avg_ms", "total_latency_avg_ms",
-    # 生成指标(--with-generation 时才有值,否则留空)
-    "faithfulness_avg", "answer_relevance_avg", "answer_correctness_avg",
-    "token_f1_avg", "generation_latency_avg_ms",
+    # 5 核心指标
+    "accuracy", "recall", "throughput", "faithfulness", "relevance",
 ]
 
 # per_query sheet: 版本标记子集 + 单条问题明细
 PER_QUERY_COLUMNS = [
     "run_id", "version_label", "run_time", "git_commit", "with_generation", "benchmark_id",
-    "query_id", "game_name", "question", "n_retrieved",
-    "recall@topk", "hitrate@topk", "mrr", "ndcg@topk", "map",
-    "top1_sim", "insufficient", "retrieval_ms", "total_ms",
-    "faithfulness", "relevance", "correctness", "token_f1", "generation_ms",
+    "query_id", "game_name", "question",
+    "accuracy", "recall", "faithfulness", "relevance", "latency_ms",
 ]
 
 
