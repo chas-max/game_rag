@@ -151,6 +151,15 @@ def update_conversation(conv_id: int, title: str) -> dict | None:
     return dict(row) if row else None
 
 
+def update_conversation_game_name(conv_id: int, game_name: str) -> None:
+    db = get_db()
+    db.execute(
+        "UPDATE conversations SET game_name = ?, updated_at = datetime('now','localtime') WHERE id = ?",
+        (game_name, conv_id),
+    )
+    db.commit()
+
+
 def update_conversation_timestamp(conv_id: int) -> None:
     db = get_db()
     db.execute(

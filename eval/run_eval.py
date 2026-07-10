@@ -35,14 +35,8 @@ from config import settings
 from eval.benchmark import DEFAULT_BENCHMARK_PATH, load_benchmark
 from eval.excel_logger import log_run
 from eval.metrics import (
-    average_precision,
-    hit_rate_at_k,
     judge_generation,
-    ndcg_at_k,
-    precision_at_k,
     recall_at_k,
-    reciprocal_rank,
-    token_f1,
 )
 
 DEFAULT_OUT = os.path.join("eval", "rag_metrics.xlsx")
@@ -85,24 +79,10 @@ def _config_snapshot() -> dict:
 # ── 单条评测 ────────────────────────────────────────────────────────
 
 def _retrieval_metrics(retrieved: list[dict], relevant_ids: list[int], topk: int) -> dict:
-    """计算单条问题的全部检索指标(供明细 sheet 子集 + 汇总聚合使用)。"""
+    """计算单条问题的检索指标。"""
     rids = [str(d["id"]) for d in retrieved]
-    sims = [float(d.get("similarity") or 0.0) for d in retrieved]
     return {
-        "recall@topk": recall_at_k(rids, relevant_ids, topk),
-        "precision@topk": precision_at_k(rids, relevant_ids, topk),
-        "hitrate@topk": hit_rate_at_k(rids, relevant_ids, topk),
-        "mrr": reciprocal_rank(rids, relevant_ids),
-        "ndcg@topk": ndcg_at_k(rids, relevant_ids, topk),
-        "map": average_precision(rids, relevant_ids),
-        "recall@5": recall_at_k(rids, relevant_ids, 5),
-        "hitrate@5": hit_rate_at_k(rids, relevant_ids, 5),
-        "ndcg@5": ndcg_at_k(rids, relevant_ids, 5),
-        "recall@1": recall_at_k(rids, relevant_ids, 1),
-        "top1_sim": round(sims[0], 4) if sims else 0.0,
-        "avg_sim": round(mean(sims), 4) if sims else 0.0,
-        "insufficient": 0 if retrieved else 1,
-        "n_retrieved": len(retrieved),
+        "recall": recall_at_k(rids, relevant_ids, topk),
     }
 
 
@@ -121,7 +101,6 @@ async def _eval_one(item: dict, topk: int, with_generation: bool) -> dict:
         "game_name": game,
         "question": question,
         **_retrieval_metrics(retrieved, relevant, topk),
-        "retrieval_ms": retrieval_ms,
     }
 
     if with_generation and retrieved:
@@ -131,21 +110,17 @@ async def _eval_one(item: dict, topk: int, with_generation: bool) -> dict:
         gen_ms = round((time.perf_counter() - t1) * 1000, 1)
         judged = await judge_generation(question, answer, item.get("reference_answer", ""), context)
         row.update({
+            "accuracy": judged["correctness"],
             "faithfulness": judged["faithfulness"],
             "relevance": judged["relevance"],
-            "correctness": judged["correctness"],
-            "token_f1": round(token_f1(answer, item.get("reference_answer", "")), 4),
-            "generation_ms": gen_ms,
-            "total_ms": round(retrieval_ms + gen_ms, 1),
+            "latency_ms": round(retrieval_ms + gen_ms, 1),
         })
     else:
         row.update({
-            "total_ms": retrieval_ms,
-            "generation_ms": None,
+            "accuracy": None,
             "faithfulness": None,
             "relevance": None,
-            "correctness": None,
-            "token_f1": None,
+            "latency_ms": retrieval_ms,
         })
 
     return row
@@ -158,34 +133,26 @@ def _mean_skip_none(values: list) -> float | None:
     return round(mean(nums), 4) if nums else None
 
 
-def _aggregate(rows: list[dict], with_generation: bool) -> dict:
+def _aggregate(rows: list[dict], with_generation: bool, total_elapsed: float) -> dict:
     """把单条明细聚合为 runs sheet 的汇总指标。"""
     n = len(rows)
+    qps = round(n / total_elapsed, 2) if total_elapsed > 0 else 0.0
     summary = {
         "n_queries": n,
-        "recall@topk": _mean_skip_none([r["recall@topk"] for r in rows]),
-        "precision@topk": _mean_skip_none([r["precision@topk"] for r in rows]),
-        "hitrate@topk": _mean_skip_none([r["hitrate@topk"] for r in rows]),
-        "mrr": _mean_skip_none([r["mrr"] for r in rows]),
-        "ndcg@topk": _mean_skip_none([r["ndcg@topk"] for r in rows]),
-        "map": _mean_skip_none([r["map"] for r in rows]),
-        "recall@5": _mean_skip_none([r["recall@5"] for r in rows]),
-        "hitrate@5": _mean_skip_none([r["hitrate@5"] for r in rows]),
-        "ndcg@5": _mean_skip_none([r["ndcg@5"] for r in rows]),
-        "recall@1": _mean_skip_none([r["recall@1"] for r in rows]),
-        "avg_top1_sim": _mean_skip_none([r["top1_sim"] for r in rows]),
-        "avg_sim": _mean_skip_none([r["avg_sim"] for r in rows]),
-        "insufficient_rate": _mean_skip_none([r["insufficient"] for r in rows]),
-        "retrieval_latency_avg_ms": _mean_skip_none([r["retrieval_ms"] for r in rows]),
-        "total_latency_avg_ms": _mean_skip_none([r["total_ms"] for r in rows]),
+        "recall": _mean_skip_none([r.get("recall") for r in rows]),
+        "throughput": qps,
     }
     if with_generation:
         summary.update({
-            "faithfulness_avg": _mean_skip_none([r.get("faithfulness") for r in rows]),
-            "answer_relevance_avg": _mean_skip_none([r.get("relevance") for r in rows]),
-            "answer_correctness_avg": _mean_skip_none([r.get("correctness") for r in rows]),
-            "token_f1_avg": _mean_skip_none([r.get("token_f1") for r in rows]),
-            "generation_latency_avg_ms": _mean_skip_none([r.get("generation_ms") for r in rows]),
+            "accuracy": _mean_skip_none([r.get("accuracy") for r in rows]),
+            "faithfulness": _mean_skip_none([r.get("faithfulness") for r in rows]),
+            "relevance": _mean_skip_none([r.get("relevance") for r in rows]),
+        })
+    else:
+        summary.update({
+            "accuracy": None,
+            "faithfulness": None,
+            "relevance": None,
         })
     return summary
 
@@ -220,9 +187,11 @@ async def run(args) -> None:
         async with sem:
             return await _eval_one(item, topk, args.with_generation)
 
+    t_start = time.perf_counter()
     rows = await asyncio.gather(*[_bounded(it) for it in items])
+    t_end = time.perf_counter()
 
-    summary = _aggregate(rows, args.with_generation)
+    summary = _aggregate(rows, args.with_generation, t_end - t_start)
 
     # 版本标记
     commit, dirty = _git_info()
@@ -252,12 +221,7 @@ def _print_summary(summary: dict, run_meta: dict, out_path: str) -> None:
     print(f"{'指标':<24}{'值':>14}")
     print("-" * 56)
     for key in [
-        "n_queries", "recall@topk", "precision@topk", "hitrate@topk", "mrr",
-        "ndcg@topk", "map", "recall@5", "hitrate@5", "recall@1",
-        "avg_top1_sim", "avg_sim", "insufficient_rate",
-        "retrieval_latency_avg_ms", "total_latency_avg_ms",
-        "faithfulness_avg", "answer_relevance_avg", "answer_correctness_avg",
-        "token_f1_avg", "generation_latency_avg_ms",
+        "n_queries", "accuracy", "recall", "throughput", "faithfulness", "relevance",
     ]:
         if key in summary and summary[key] is not None:
             val = summary[key]

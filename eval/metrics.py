@@ -33,69 +33,6 @@ def recall_at_k(retrieved_ids: list, relevant_ids: Iterable, k: int) -> float:
     return len(rel & topk) / len(rel)
 
 
-def precision_at_k(retrieved_ids: list, relevant_ids: Iterable, k: int) -> float:
-    """Precision@K(精确率@K): 前 K 条结果中相关文档数 / K。"""
-    if k <= 0:
-        return 0.0
-    rel = _to_set(relevant_ids)
-    topk = {str(x) for x in retrieved_ids[:k]}
-    return len(rel & topk) / k
-
-
-def hit_rate_at_k(retrieved_ids: list, relevant_ids: Iterable, k: int) -> float:
-    """HitRate@K(命中率@K): 前 K 条中是否至少命中一个相关文档(1.0/0.0)。
-
-    单相关文档时等价于 Recall@K。衡量"有没有召回到"。
-    """
-    rel = _to_set(relevant_ids)
-    topk = {str(x) for x in retrieved_ids[:k]}
-    return 1.0 if (rel & topk) else 0.0
-
-
-def reciprocal_rank(retrieved_ids: list, relevant_ids: Iterable) -> float:
-    """MRR 的单查询分量: 1 / 第一个相关文档的排名(无命中则 0)。
-
-    越靠前命中得分越高,对排序质量敏感。
-    """
-    rel = _to_set(relevant_ids)
-    for i, rid in enumerate(retrieved_ids, start=1):
-        if str(rid) in rel:
-            return 1.0 / i
-    return 0.0
-
-
-def ndcg_at_k(retrieved_ids: list, relevant_ids: Iterable, k: int) -> float:
-    """NDCG@K(归一化折损累积增益): 排序质量,越靠前命中得分越高并折损。
-
-    二值相关性: DCG = Σ rel_i / log2(i+1); IDCG 为理想排序下的 DCG; NDCG = DCG/IDCG ∈ [0,1]。
-    """
-    rel = _to_set(relevant_ids)
-    if not rel:
-        return 0.0
-    topk = [str(x) for x in retrieved_ids[:k]]
-    dcg = sum((1.0 if rid in rel else 0.0) / math.log2(i + 1) for i, rid in enumerate(topk, start=1))
-    ideal_hits = min(len(rel), k)
-    idcg = sum(1.0 / math.log2(i + 1) for i in range(1, ideal_hits + 1))
-    return dcg / idcg if idcg > 0 else 0.0
-
-
-def average_precision(retrieved_ids: list, relevant_ids: Iterable) -> float:
-    """AP(平均精度): 在每个命中位置计算 precision 并取平均,再除以相关文档数。
-
-    多相关文档时 MAP = mean(AP);单相关文档时 AP = 1/rank(命中)或 0(未命中)。
-    """
-    rel = _to_set(relevant_ids)
-    if not rel:
-        return 0.0
-    hits = 0
-    precision_sum = 0.0
-    for i, rid in enumerate(retrieved_ids, start=1):
-        if str(rid) in rel:
-            hits += 1
-            precision_sum += hits / i
-    return precision_sum / len(rel)
-
-
 # ── 生成指标 ────────────────────────────────────────────────────────
 
 def _extract_json_block(text: str) -> dict | None:
@@ -179,35 +116,3 @@ async def judge_generation(
         "correctness": _clamp01(data.get("correctness")),
     }
 
-
-def _tokenize(text: str) -> list[str]:
-    """中文字符级 + 拉丁词级混合分词,用于 token F1。
-
-    每个 CJK 字符作为一个 token(适合中文短答),拉丁字母数字串按词切分。
-    """
-    if not text:
-        return []
-    tokens: list[str] = []
-    # 拉丁词(字母/数字)
-    for m in re.findall(r"[A-Za-z0-9]+", text):
-        tokens.append(m.lower())
-    # CJK 单字(中日韩统一表意文字 + 常见扩展)
-    for ch in text:
-        if "一" <= ch <= "鿿" or "㐀" <= ch <= "䶿":
-            tokens.append(ch)
-    return tokens
-
-
-def token_f1(answer: str, reference: str) -> float:
-    """字符/词级 token F1(不调 LLM),作为正确性的廉价补充信号。∈ [0,1]。"""
-    a = _tokenize(answer)
-    r = _tokenize(reference)
-    if not a or not r:
-        return 0.0
-    ca, cr = Counter(a), Counter(r)
-    overlap = sum((ca & cr).values())
-    if overlap == 0:
-        return 0.0
-    precision = overlap / len(a)
-    recall = overlap / len(r)
-    return 2 * precision * recall / (precision + recall)

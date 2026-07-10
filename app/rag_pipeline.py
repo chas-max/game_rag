@@ -357,6 +357,51 @@ async def rag_query(
                 # 回调失败不应影响主流程
                 pass
 
+    # ── Game Name Inference ──────────────────────────────────────────
+    # If game_name is empty, try to resolve it from the conversation history
+    if not game_name or game_name == "":
+        conv = db.get_conversation(conversation_id)
+        if conv and conv.get("game_name"):
+            game_name = conv.get("game_name")
+
+    # If it's still empty, try to infer it from the user message
+    if not game_name or game_name == "":
+        # Retrieve all games from database
+        all_games = [g["game_name"] for g in db.list_games()]
+        
+        # Method A: Substring match (sort by length descending)
+        sorted_games = sorted(all_games, key=len, reverse=True)
+        matched_game = None
+        for g in sorted_games:
+            if g in user_message:
+                matched_game = g
+                break
+                
+        # Method B: LLM extract (if no substring match is found)
+        if not matched_game and all_games:
+            prompt = f"""分析以下用户的问答输入，并从备选游戏列表中识别出用户当前询问的是哪一款游戏。
+备选游戏列表:
+{json.dumps(all_games, ensure_ascii=False)}
+
+用户输入:
+{user_message}
+
+请只返回识别到的游戏名称。必须是备选列表中的一个。如果无法确定或不在列表中，只返回 "Unknown"。
+
+识别结果:"""
+            llm_result = await _llm_chat(prompt, max_tokens=50, temperature=0.1)
+            llm_result = llm_result.strip().strip("'\"")
+            if llm_result in all_games:
+                matched_game = llm_result
+
+        if matched_game:
+            game_name = matched_game
+            # Update the conversation record in database
+            db.update_conversation_game_name(conversation_id, game_name)
+            print(f"[rag] Inferred game name: {game_name} and updated conversation {conversation_id}")
+        else:
+            print(f"[rag] Could not infer game name from message: {user_message}")
+
     # Step 1-2: HyDE + 混合检索(封装为 retrieve_documents,与评测共用同一检索逻辑)
     retrieved = await retrieve_documents(game_name, user_message, _report)
 

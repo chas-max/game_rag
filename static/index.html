@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>游戏信息问答智能体</title>
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/style.css?v=1.2">
 </head>
 <body>
 
@@ -24,19 +24,13 @@
   <!-- ═══════════════ Chat Area ═══════════════ -->
   <main id="chat-area">
     <div id="chat-header">
-      <span class="game-name" id="chat-game-name">未选择游戏</span>
+      <span class="game-name" id="chat-game-name">智能对话</span>
       <button id="btn-manage-sources">🧠 知识库管理</button>
     </div>
 
     <div id="message-list"></div>
 
     <div id="chat-input-area">
-      <input
-        type="text"
-        id="input-game-name"
-        placeholder="游戏名称..."
-        autocomplete="off"
-      >
       <textarea
         id="input-message"
         placeholder="输入你的问题，例如：塞尔达传说旷野之息 如何获得大师剑？"
@@ -101,11 +95,11 @@
   </div>
 
   <!-- ═══════════════ Scripts (load order matters) ═══════════════ -->
-  <script src="/static/js/api.js?v=1.1"></script>
-  <script src="/static/js/components.js?v=1.1"></script>
-  <script src="/static/js/state.js?v=1.1"></script>
-  <script src="/static/js/chat.js?v=1.1"></script>
-  <script src="/static/js/sidebar.js?v=1.1"></script>
-  <script src="/static/js/app.js?v=1.1"></script>
+  <script src="/static/js/api.js?v=1.2"></script>
+  <script src="/static/js/components.js?v=1.2"></script>
+  <script src="/static/js/state.js?v=1.2"></script>
+  <script src="/static/js/chat.js?v=1.2"></script>
+  <script src="/static/js/sidebar.js?v=1.2"></script>
+  <script src="/static/js/app.js?v=1.2"></script>
 </body>
 </html>
