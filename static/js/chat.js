@@ -7,11 +7,7 @@ const Chat = {
     const list = document.getElementById("message-list");
     list.innerHTML = "";
 
-    // Update game name display
-    const gameDisplay = document.getElementById("chat-game-name");
-    if (gameDisplay) {
-      gameDisplay.textContent = AppState.currentGameName || "未选择游戏";
-    }
+    // Remove game name display logic
 
     if (!AppState.currentMessages || AppState.currentMessages.length === 0) {
       list.appendChild(Components.emptyState());
@@ -56,21 +52,13 @@ const Chat = {
   setInputEnabled(enabled) {
     document.getElementById("btn-send").disabled = !enabled;
     document.getElementById("input-message").disabled = !enabled;
-    document.getElementById("input-game-name").disabled = !enabled;
   },
 
   async handleSend() {
-    const gameNameInput = document.getElementById("input-game-name");
     const messageInput = document.getElementById("input-message");
 
-    const gameName = gameNameInput.value.trim();
     const message = messageInput.value.trim();
 
-    if (!gameName) {
-      alert("请输入游戏名称");
-      gameNameInput.focus();
-      return;
-    }
     if (!message) {
       alert("请输入你的问题");
       messageInput.focus();
@@ -80,7 +68,7 @@ const Chat = {
     messageInput.value = "";
     messageInput.style.height = "auto";
 
-    await AppState.sendMessage(gameName, message);
+    await AppState.sendMessage(message);
     messageInput.focus();
   },
 
