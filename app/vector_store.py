@@ -313,10 +313,11 @@ def search_similar_semantic(
     if threshold is None:
         threshold = settings.similarity_threshold
     coll = _sem_collection()
+    where_clause = {"game_name": game_name} if game_name else None
     res = coll.query(
         query_embeddings=[_to_list(query_embedding)],
         n_results=top_k,
-        where={"game_name": game_name},
+        where=where_clause,
         include=["metadatas", "documents", "distances"],
     )
     ids = res["ids"][0]

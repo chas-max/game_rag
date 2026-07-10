@@ -6,8 +6,7 @@ from contextlib import asynccontextmanager
 import dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+
 
 dotenv.load_dotenv(override=True)
 
@@ -56,14 +55,8 @@ app.add_middleware(
 for router in all_routers:
     app.include_router(router, prefix="/api")
 
-# Serve static frontend files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Serve static frontend files removed, now using separate Next.js app
 
-
-@app.get("/")
-async def index():
-    """Serve the SPA shell."""
-    return FileResponse("static/index.html")
 
 
 if __name__ == "__main__":
