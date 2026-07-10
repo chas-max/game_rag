@@ -10,3 +10,4 @@ apscheduler>=3.10.0
 pydantic>=2.0.0
 openpyxl>=3.1.0
 chromadb>=0.5.0
+duckduckgo_search>=5.0.0
