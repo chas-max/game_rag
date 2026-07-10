@@ -5,7 +5,6 @@
 const AppState = {
   conversations: [],
   currentConversationId: null,
-  currentGameName: "",
   currentMessages: [],
   isStreaming: false,
   games: [],
@@ -22,32 +21,29 @@ const AppState = {
   async loadConversation(convId) {
     const conv = await API.get("/api/conversations/" + convId);
     this.currentConversationId = convId;
-    this.currentGameName = conv.game_name || "";
     this.currentMessages = conv.messages || [];
     Chat.render();
-    document.getElementById("input-game-name").value = this.currentGameName;
   },
 
-  async createConversation(gameName) {
+  async createConversation() {
     const conv = await API.post("/api/conversations", {
-      game_name: gameName,
+      game_name: "",
       title: "New Conversation",
     });
     this.currentConversationId = conv.id;
-    this.currentGameName = gameName;
     this.currentMessages = [];
     await this.refreshConversations();
     Chat.render();
   },
 
-  async sendMessage(gameName, message) {
+  async sendMessage(message) {
     if (this.isStreaming) return;
     this.isStreaming = true;
     Chat.setInputEnabled(false);
 
     // If no conversation exists, create one first
     if (!this.currentConversationId) {
-      await this.createConversation(gameName);
+      await this.createConversation();
     }
 
     // Optimistically show user message
@@ -71,7 +67,7 @@ const AppState = {
           "/api/chat/stream",
           {
             conversation_id: this.currentConversationId,
-            game_name: gameName,
+            game_name: "",
             message: message,
           },
           {
@@ -152,9 +148,7 @@ const AppState = {
 
   clearCurrent() {
     this.currentConversationId = null;
-    this.currentGameName = "";
     this.currentMessages = [];
-    document.getElementById("input-game-name").value = "";
     document.getElementById("input-message").value = "";
     Chat.render();
   },

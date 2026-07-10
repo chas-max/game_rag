@@ -7,14 +7,12 @@ const App = {
     // Initialize sub-modules
     Chat.init();
     Sidebar.init();
-    this.initGameNameInput();
     this.initKnowledgeModal();
 
     // Load initial data
     try {
       await AppState.refreshConversations();
       await AppState.refreshGames();
-      this.populateGameSuggestions();
     } catch (err) {
       console.error("Failed to load initial data:", err);
     }
@@ -23,25 +21,7 @@ const App = {
     Chat.render();
   },
 
-  initGameNameInput() {
-    const input = document.getElementById("input-game-name");
-    // Build a datalist for autocomplete
-    const datalist = document.createElement("datalist");
-    datalist.id = "game-name-suggestions";
-    input.setAttribute("list", "game-name-suggestions");
-    input.parentNode.insertBefore(datalist, input.nextSibling);
-  },
 
-  populateGameSuggestions() {
-    const datalist = document.getElementById("game-name-suggestions");
-    if (!datalist) return;
-    datalist.innerHTML = "";
-    (AppState.games || []).forEach((g) => {
-      const opt = document.createElement("option");
-      opt.value = g.game_name;
-      datalist.appendChild(opt);
-    });
-  },
 
   // ── Knowledge Modal ─────────────────────────────────────────────
   initKnowledgeModal() {
@@ -104,7 +84,6 @@ const App = {
         this.setKbStatus(`《${name}》获取完成,共 ${result.chunks} 个知识块`);
         await this.loadKnowledgeData();
         await AppState.refreshGames();
-        this.populateGameSuggestions();
       } catch (err) {
         this.setKbStatus(`获取失败: ${err.message}`);
       }
@@ -124,7 +103,6 @@ const App = {
       this.setKbStatus(summary);
       await this.loadKnowledgeData();
       await AppState.refreshGames();
-      this.populateGameSuggestions();
     } catch (err) {
       this.setKbStatus("操作失败: " + err.message);
     } finally {
@@ -197,7 +175,6 @@ const App = {
             this.setKbStatus(`《${name}》已更新`);
             await this.loadKnowledgeData();
             await AppState.refreshGames();
-            this.populateGameSuggestions();
           } catch (err) {
             this.setKbStatus("更新失败: " + err.message);
           }
@@ -209,7 +186,6 @@ const App = {
             await API.del(`/api/documents/by-game/${encodeURIComponent(name)}`);
             await this.loadKnowledgeData();
             await AppState.refreshGames();
-            this.populateGameSuggestions();
           } catch (err) {
             alert("删除失败: " + err.message);
           }

@@ -101,6 +101,24 @@ async def generate_hypothetical_answer(game_name: str, user_message: str) -> str
     return await _llm_chat(prompt, max_tokens=500, temperature=0.5)
 
 
+async def extract_game_name(user_message: str, history_msgs: list[dict]) -> str:
+    """LLM 从用户输入和历史记录中提取游戏名称。"""
+    prompt = f"""请从用户的提问和上下文历史中，提取出用户当前讨论的具体游戏名称。
+如果明确提到了某个游戏名称，或者根据上下文能明确判断是哪款游戏，请仅仅输出该游戏名称（例如：塞尔达传说旷野之息、原神），不要包含任何多余的字词、标点或解释。
+如果没有提到任何具体的游戏，或者无法确定，请直接输出 "None"。
+
+用户提问: {user_message}"""
+    if history_msgs:
+        history_text = "\n".join([f"{'用户' if m['role']=='user' else '助手'}: {m['content'][:200]}" for m in history_msgs[-3:]])
+        prompt += f"\n\n近期历史记录:\n{history_text}"
+        
+    extracted = await _llm_chat(prompt, max_tokens=20, temperature=0.0)
+    extracted = extracted.strip()
+    if not extracted or extracted.lower() in ("none", "null", "不知道", "未指定"):
+        return ""
+    return extracted
+
+
 # ── Step 2: 混合检索 ──────────────────────────────────────────────
 
 def merge_and_dedupe(result_lists: list[list[dict]], top_k: int) -> list[dict]:
@@ -357,12 +375,23 @@ async def rag_query(
                 # 回调失败不应影响主流程
                 pass
 
-    # Step 1-2: HyDE + 混合检索(封装为 retrieve_documents,与评测共用同一检索逻辑)
-    retrieved = await retrieve_documents(game_name, user_message, _report)
-
-    # Step 3: 加载历史 + 保存用户消息
+    # Step 0: 加载历史 + 保存用户消息 + 提取游戏名
     history_msgs = db.get_messages(conversation_id, limit=settings.max_history_messages)
     db.save_message(conversation_id, "user", user_message, None)
+
+    extracted_game = await extract_game_name(user_message, history_msgs)
+    if extracted_game:
+        game_name = extracted_game
+        db.update_conversation_game(conversation_id, game_name)
+    else:
+        conv = db.get_conversation(conversation_id)
+        if conv and conv.get("game_name"):
+            game_name = conv["game_name"]
+        else:
+            game_name = game_name # fallback to the one passed in (e.g. empty string)
+
+    # Step 1-2: HyDE + 混合检索(封装为 retrieve_documents,与评测共用同一检索逻辑)
+    retrieved = await retrieve_documents(game_name, user_message, _report)
 
     # Step 4: 无结果 → 记录 pending query,返回知识不足
     if not retrieved:

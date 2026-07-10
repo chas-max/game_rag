@@ -17,7 +17,7 @@ class ApiResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     conversation_id: int
-    game_name: str = Field(..., min_length=1, description="Name of the game to query")
+    game_name: str = Field(default="", description="Name of the game to query")
     message: str = Field(..., min_length=1, description="User question")
 
 

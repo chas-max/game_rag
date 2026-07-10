@@ -385,23 +385,7 @@ body {
   box-shadow: 0 -1px 3px rgba(0,0,0,0.04);
 }
 
-#input-game-name {
-  width: 140px;
-  padding: 10px 12px;
-  border: 1px solid #cfd8dc;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  background: white;
-  color: var(--text-primary);
-  transition: border-color var(--transition);
-  flex-shrink: 0;
-}
 
-#input-game-name:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.1);
-}
 
 #input-message {
   flex: 1;
