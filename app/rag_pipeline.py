@@ -69,6 +69,7 @@ async def _chat_with_fallback(messages: list, tools: list = None, tool_choice: s
 def _get_query_hash(query: str, game_name: str) -> str:
     return hashlib.md5(f"{game_name}:{query}".encode("utf-8")).hexdigest()
 
+_client = None
 def _get_default_client() -> AsyncOpenAI:
 
     global _client
