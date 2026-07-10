@@ -38,7 +38,7 @@ async def list_pending():
 
 
 @router.delete("/pending/{query_id}")
-async def delete_pending(query_id: int):
+async def delete_pending(query_id: str):
     deleted = db.delete_pending_query(query_id)
     if not deleted:
         return ApiResponse(success=False, error="Pending query not found")

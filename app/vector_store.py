@@ -27,6 +27,14 @@ from config import settings
 
 DOCS_COLLECTION = "documents"
 SEM_COLLECTION = "semantic_chunks"
+CONV_COLLECTION = "conversations"
+MSG_COLLECTION = "messages"
+TASKS_COLLECTION = "scraping_tasks"
+PENDING_COLLECTION = "pending_queries"
+LOGS_COLLECTION = "knowledge_logs"
+CACHE_COLLECTION = "query_cache"
+MEMORY_COLLECTION = "user_memory"
+
 # cosine 距离 = 1 - cosine_similarity(归一化向量),与原 numpy 余弦相似度一致
 _SPACE_META = {"hnsw:space": "cosine"}
 _BATCH = 500
@@ -34,6 +42,14 @@ _BATCH = 500
 _client: chromadb.api.ClientAPI | None = None
 _docs_coll = None
 _sem_coll = None
+_conv_coll = None
+_msg_coll = None
+_tasks_coll = None
+_pending_coll = None
+_logs_coll = None
+_cache_coll = None
+_memory_coll = None
+
 
 
 def get_chroma() -> chromadb.api.ClientAPI:
@@ -61,6 +77,11 @@ def _sem_collection():
             SEM_COLLECTION, metadata=_SPACE_META, embedding_function=None
         )
     return _sem_coll
+
+def get_collection(name: str):
+    return get_chroma().get_or_create_collection(
+        name, metadata=_SPACE_META, embedding_function=None
+    )
 
 
 def reset_collections() -> None:
