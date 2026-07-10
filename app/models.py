@@ -16,7 +16,7 @@ class ApiResponse(BaseModel):
 # ── Chat ───────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
-    conversation_id: int
+    conversation_id: str
     game_name: str = Field(default="", description="Name of the game to query")
     message: str = Field(..., min_length=1, description="User question")
 
@@ -35,7 +35,7 @@ class UpdateConversationRequest(BaseModel):
 # ── Documents ──────────────────────────────────────────────────────
 
 class DocumentInfo(BaseModel):
-    id: int
+    id: str
     game_name: str
     title: str | None
     url: str | None
@@ -64,4 +64,4 @@ class SourceInfo(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: list[SourceInfo]
-    conversation_id: int
+    conversation_id: str

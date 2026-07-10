@@ -26,7 +26,7 @@ async def create_conversation(req: CreateConversationRequest):
 
 
 @router.get("/{conv_id}")
-async def get_conversation(conv_id: int):
+async def get_conversation(conv_id: str):
     conv = db.get_conversation(conv_id)
     if conv is None:
         return ApiResponse(success=False, error="Conversation not found")
@@ -34,7 +34,7 @@ async def get_conversation(conv_id: int):
 
 
 @router.put("/{conv_id}")
-async def update_conversation(conv_id: int, req: UpdateConversationRequest):
+async def update_conversation(conv_id: str, req: UpdateConversationRequest):
     conv = db.update_conversation(conv_id, req.title)
     if conv is None:
         return ApiResponse(success=False, error="Conversation not found")
@@ -42,7 +42,7 @@ async def update_conversation(conv_id: int, req: UpdateConversationRequest):
 
 
 @router.delete("/{conv_id}")
-async def delete_conversation(conv_id: int):
+async def delete_conversation(conv_id: str):
     deleted = db.delete_conversation(conv_id)
     if not deleted:
         return ApiResponse(success=False, error="Conversation not found")

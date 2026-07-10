@@ -1,233 +1,184 @@
-"""Persistence layer.
+"""Persistence layer backed purely by ChromaDB.
 
-关系数据(conversations / messages / scraping_tasks / pending_queries / knowledge_logs)
-存 SQLite;向量数据(documents / semantic_chunks 的 embedding 与相似度检索)存 ChromaDB,
-委托 app.vector_store。对外接口与返回结构保持不变,上层无感。
+Replaces SQLite entirely. All data is stored in ChromaDB collections.
 """
 
 import json
-import os
-import sqlite3
-from typing import Any
-
+import uuid
 import numpy as np
+from datetime import datetime
 
 from app import vector_store as vs
 from config import settings
 
-_db: sqlite3.Connection | None = None
-
-DDL = """
-PRAGMA journal_mode=WAL;
-PRAGMA foreign_keys=ON;
-
-CREATE TABLE IF NOT EXISTS conversations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL DEFAULT 'New Conversation',
-    game_name TEXT NOT NULL DEFAULT '',
-    created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
-    updated_at TIMESTAMP DEFAULT (datetime('now','localtime'))
-);
-
-CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id INTEGER NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('user','assistant','system')),
-    content TEXT NOT NULL,
-    sources TEXT,
-    created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS scraping_tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    game_name TEXT NOT NULL,
-    source_name TEXT NOT NULL,
-    source_url TEXT NOT NULL,
-    status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed')),
-    interval_hours INTEGER DEFAULT 24,
-    last_run TIMESTAMP,
-    next_run TIMESTAMP,
-    error_message TEXT,
-    created_at TIMESTAMP DEFAULT (datetime('now','localtime'))
-);
-
--- 用户提问但知识库未命中的问题,下次知识获取时优先处理
-CREATE TABLE IF NOT EXISTS pending_queries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    game_name TEXT NOT NULL,
-    question TEXT NOT NULL,
-    status TEXT DEFAULT 'pending' CHECK(status IN ('pending','resolved')),
-    created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
-    resolved_at TIMESTAMP
-);
-
--- 知识获取任务执行日志
-CREATE TABLE IF NOT EXISTS knowledge_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    action TEXT NOT NULL,
-    pending_processed INTEGER DEFAULT 0,
-    trending_fetched INTEGER DEFAULT 0,
-    games_detail TEXT,
-    message TEXT,
-    created_at TIMESTAMP DEFAULT (datetime('now','localtime'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_scraping_tasks_game ON scraping_tasks(game_name);
-CREATE INDEX IF NOT EXISTS idx_pending_queries_status ON pending_queries(status, created_at);
-CREATE INDEX IF NOT EXISTS idx_pending_queries_game ON pending_queries(game_name);
-
--- 注: documents / semantic_chunks 的向量与正文已迁至 ChromaDB(app.vector_store)。
--- 旧 SQLite 库中若仍存在这两张表,不影响新流程(保留作备份,可手动 DROP)。
-"""
-
-
-def get_db() -> sqlite3.Connection:
-    """Return a thread-local database connection, initializing it on first access."""
-    global _db
-    if _db is None:
-        os.makedirs(os.path.dirname(settings.database_path), exist_ok=True)
-        _db = sqlite3.connect(settings.database_path, check_same_thread=False)
-        _db.row_factory = sqlite3.Row
-        _db.executescript(DDL)
-    return _db
-
 
 def init_db() -> None:
-    """Explicitly initialize the database (called at startup)."""
-    get_db()
+    """Initialize collections."""
+    pass # Vector store initializes lazily
 
 
-# ── Conversation CRUD ──────────────────────────────────────────────
+def _now() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def _to_list(vec) -> list[float]:
+    if hasattr(vec, "tolist"):
+        return vec.tolist()
+    return list(vec)
+
+# 鈹€鈹€ Conversation CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 def create_conversation(game_name: str, title: str = "New Conversation") -> dict:
-    db = get_db()
-    cur = db.execute(
-        "INSERT INTO conversations (title, game_name) VALUES (?, ?)",
-        (title, game_name),
-    )
-    db.commit()
-    row = db.execute("SELECT * FROM conversations WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return dict(row)
+    coll = vs.get_collection(vs.CONV_COLLECTION)
+    conv_id = str(uuid.uuid4())
+    now = _now()
+    meta = {"title": title, "game_name": game_name, "created_at": now, "updated_at": now}
+    coll.add(ids=[conv_id], metadatas=[meta], documents=[""])
+    return {"id": conv_id, **meta}
 
 
 def list_conversations() -> list[dict]:
-    db = get_db()
-    rows = db.execute(
-        """
-        SELECT c.*, COUNT(m.id) AS message_count
-        FROM conversations c
-        LEFT JOIN messages m ON m.conversation_id = c.id
-        GROUP BY c.id
-        ORDER BY c.updated_at DESC
-        """
-    ).fetchall()
-    return [dict(r) for r in rows]
+    coll = vs.get_collection(vs.CONV_COLLECTION)
+    res = coll.get(include=["metadatas"])
+    
+    msg_coll = vs.get_collection(vs.MSG_COLLECTION)
+    
+    out = []
+    for i, cid in enumerate(res["ids"]):
+        meta = res["metadatas"][i]
+        
+        # We can't efficiently join, so we fetch count for each or just set to 0. 
+        # For simplicity, we just get count for each (can be slow for many, but ok for now)
+        msg_res = msg_coll.get(where={"conversation_id": cid}, include=[])
+        
+        out.append({
+            "id": cid,
+            "title": meta.get("title", ""),
+            "game_name": meta.get("game_name", ""),
+            "created_at": meta.get("created_at", ""),
+            "updated_at": meta.get("updated_at", ""),
+            "message_count": len(msg_res["ids"])
+        })
+    out.sort(key=lambda x: x["updated_at"], reverse=True)
+    return out
 
 
-def get_conversation(conv_id: int) -> dict | None:
-    db = get_db()
-    row = db.execute("SELECT * FROM conversations WHERE id = ?", (conv_id,)).fetchone()
-    if row is None:
+def get_conversation(conv_id: str) -> dict | None:
+    coll = vs.get_collection(vs.CONV_COLLECTION)
+    res = coll.get(ids=[conv_id], include=["metadatas"])
+    if not res["ids"]:
         return None
-    result = dict(row)
-    msgs = db.execute(
-        "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
-        (conv_id,),
-    ).fetchall()
-    result["messages"] = [dict(m) for m in msgs]
+    
+    meta = res["metadatas"][0]
+    result = {"id": conv_id, **meta}
+    
+    # Get messages
+    msg_coll = vs.get_collection(vs.MSG_COLLECTION)
+    msg_res = msg_coll.get(where={"conversation_id": conv_id}, include=["metadatas", "documents"])
+    
+    msgs = []
+    for i, mid in enumerate(msg_res["ids"]):
+        m_meta = msg_res["metadatas"][i]
+        m_doc = msg_res["documents"][i]
+        msgs.append({
+            "id": mid,
+            "conversation_id": conv_id,
+            "role": m_meta.get("role", ""),
+            "content": m_doc,
+            "sources": m_meta.get("sources", ""),
+            "created_at": m_meta.get("created_at", "")
+        })
+    msgs.sort(key=lambda x: x["created_at"])
+    result["messages"] = msgs
     return result
 
 
-def update_conversation(conv_id: int, title: str) -> dict | None:
-    db = get_db()
-    db.execute(
-        "UPDATE conversations SET title = ?, updated_at = datetime('now','localtime') WHERE id = ?",
-        (title, conv_id),
-    )
-    db.commit()
-    row = db.execute("SELECT * FROM conversations WHERE id = ?", (conv_id,)).fetchone()
-    return dict(row) if row else None
+def update_conversation(conv_id: str, title: str) -> dict | None:
+    coll = vs.get_collection(vs.CONV_COLLECTION)
+    res = coll.get(ids=[conv_id], include=["metadatas"])
+    if not res["ids"]:
+        return None
+    meta = res["metadatas"][0]
+    meta["title"] = title
+    meta["updated_at"] = _now()
+    coll.update(ids=[conv_id], metadatas=[meta])
+    return {"id": conv_id, **meta}
 
 
-def update_conversation_game_name(conv_id: int, game_name: str) -> None:
-    db = get_db()
-    db.execute(
-        "UPDATE conversations SET game_name = ?, updated_at = datetime('now','localtime') WHERE id = ?",
-        (game_name, conv_id),
-    )
-    db.commit()
 
 
-def update_conversation_timestamp(conv_id: int) -> None:
-    db = get_db()
-    db.execute(
-        "UPDATE conversations SET updated_at = datetime('now','localtime') WHERE id = ?",
-        (conv_id,),
-    )
-    db.commit()
+def update_conversation_game(conv_id: str, game_name: str) -> None:
+    coll = vs.get_collection(vs.CONV_COLLECTION)
+    res = coll.get(ids=[conv_id], include=["metadatas"])
+    if res["ids"]:
+        meta = res["metadatas"][0]
+        meta["game_name"] = game_name
+        meta["updated_at"] = _now()
+        coll.update(ids=[conv_id], metadatas=[meta])
+
+def update_conversation_game_name(conv_id: str, game_name: str) -> None:
+    update_conversation_game(conv_id, game_name)
+
+def update_conversation_timestamp(conv_id: str) -> None:
+    coll = vs.get_collection(vs.CONV_COLLECTION)
+    res = coll.get(ids=[conv_id], include=["metadatas"])
+    if res["ids"]:
+        meta = res["metadatas"][0]
+        meta["updated_at"] = _now()
+        coll.update(ids=[conv_id], metadatas=[meta])
 
 
-def update_conversation_game(conv_id: int, game_name: str) -> None:
-    db = get_db()
-    db.execute(
-        "UPDATE conversations SET game_name = ?, updated_at = datetime('now','localtime') WHERE id = ?",
-        (game_name, conv_id),
-    )
-    db.commit()
+def delete_conversation(conv_id: str) -> bool:
+    coll = vs.get_collection(vs.CONV_COLLECTION)
+    before = coll.get(ids=[conv_id], include=[])["ids"]
+    if before:
+        coll.delete(ids=[conv_id])
+        # delete messages
+        msg_coll = vs.get_collection(vs.MSG_COLLECTION)
+        msg_res = msg_coll.get(where={"conversation_id": conv_id}, include=[])
+        if msg_res["ids"]:
+            msg_coll.delete(ids=msg_res["ids"])
+        return True
+    return False
 
 
-def delete_conversation(conv_id: int) -> bool:
-    db = get_db()
-    cur = db.execute("DELETE FROM conversations WHERE id = ?", (conv_id,))
-    db.commit()
-    return cur.rowcount > 0
+# 鈹€鈹€ Message CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+
+def save_message(conv_id: str, role: str, content: str, sources: str | None = None) -> dict:
+    coll = vs.get_collection(vs.MSG_COLLECTION)
+    mid = str(uuid.uuid4())
+    now = _now()
+    meta = {
+        "conversation_id": conv_id,
+        "role": role,
+        "sources": sources or "",
+        "created_at": now
+    }
+    coll.add(ids=[mid], metadatas=[meta], documents=[content])
+    return {"id": mid, "content": content, **meta}
 
 
-# ── Message CRUD ───────────────────────────────────────────────────
-
-def save_message(conv_id: int, role: str, content: str, sources: str | None = None) -> dict:
-    db = get_db()
-    cur = db.execute(
-        "INSERT INTO messages (conversation_id, role, content, sources) VALUES (?, ?, ?, ?)",
-        (conv_id, role, content, sources),
-    )
-    db.commit()
-    row = db.execute("SELECT * FROM messages WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return dict(row)
-
-
-def get_messages(conv_id: int, limit: int = 10) -> list[dict]:
-    db = get_db()
-    rows = db.execute(
-        """
-        SELECT * FROM (
-            SELECT * FROM messages WHERE conversation_id = ?
-            ORDER BY created_at DESC LIMIT ?
-        ) ORDER BY created_at ASC
-        """,
-        (conv_id, limit),
-    ).fetchall()
-    return [dict(r) for r in rows]
+def get_messages(conv_id: str, limit: int = 10) -> list[dict]:
+    coll = vs.get_collection(vs.MSG_COLLECTION)
+    res = coll.get(where={"conversation_id": conv_id}, include=["metadatas", "documents"])
+    msgs = []
+    for i, mid in enumerate(res["ids"]):
+        meta = res["metadatas"][i]
+        msgs.append({
+            "id": mid,
+            "conversation_id": conv_id,
+            "role": meta.get("role", ""),
+            "content": res["documents"][i],
+            "sources": meta.get("sources", ""),
+            "created_at": meta.get("created_at", "")
+        })
+    msgs.sort(key=lambda x: x["created_at"], reverse=True)
+    return list(reversed(msgs[:limit]))
 
 
-# ── Document CRUD (委托 ChromaDB) ──────────────────────────────────
+# 鈹€鈹€ Document CRUD (Delegated to vs) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-def insert_document(
-    game_name: str,
-    content: str,
-    embedding: np.ndarray,
-    title: str | None = None,
-    url: str | None = None,
-    source_name: str | None = None,
-    chunk_index: int = 0,
-) -> str:
-    """存储单个 parent chunk 到 ChromaDB,返回 doc id(字符串)。"""
-    return vs.insert_document(
-        game_name, content, embedding, title=title, url=url, source_name=source_name, chunk_index=chunk_index
-    )
-
+def insert_document(*args, **kwargs) -> str:
+    return vs.insert_document(*args, **kwargs)
 
 async def store_documents_with_semantic_chunks(
     game_name: str,
@@ -237,27 +188,20 @@ async def store_documents_with_semantic_chunks(
     url: str | None = None,
     source_name: str | None = None,
 ) -> int:
-    """
-    批量存储固定长度分块(documents)及其对应的所有语义句切分块(semantic_chunks)到 ChromaDB。
-    在内部对所有切分的单句进行批量向量嵌入,提升导入性能。
-    """
     import asyncio
     from app.embedding import encode_batch
     from app.scraper import parse_chunk_sentences
 
-    # 1. 批量存储 Parent Chunks,拿到 doc id 列表(chunk_index = 位置序号)
     doc_ids = vs.add_documents(
         game_name, chunks, embeddings, title=title, url=url, source_name=source_name
     )
 
-    # 2. 从每个 Parent Chunk 解析语义句子,绑定其 doc id
     all_sentences = []
     for chunk, doc_id in zip(chunks, doc_ids):
         for s in parse_chunk_sentences(chunk):
             s["document_id"] = doc_id
             all_sentences.append(s)
 
-    # 3. 批量生成语义句 Embedding 并写入 semantic_chunks collection
     if all_sentences:
         loop = asyncio.get_running_loop()
         sentence_texts = [s["content"] for s in all_sentences]
@@ -266,37 +210,29 @@ async def store_documents_with_semantic_chunks(
 
     return len(chunks)
 
-
 def get_documents_by_game(game_name: str) -> list[dict]:
-    """Return metadata-only document rows (no embedding) for a game."""
     return vs.get_documents_by_game(game_name)
-
 
 def delete_documents_by_game(game_name: str) -> int:
     return vs.delete_documents_by_game(game_name)
 
-
 def delete_documents_by_url(url: str) -> int:
     return vs.delete_documents_by_url(url)
-
 
 def list_games() -> list[dict]:
     return vs.list_games()
 
-
 def get_document_count_for_game(game_name: str) -> int:
-    """Return the number of document chunks stored for a game."""
     return vs.get_document_count_for_game(game_name)
 
-
 def get_knowledge_stats() -> dict:
-    """Return aggregate statistics about the knowledge base."""
     games = vs.list_games()
     total_docs = vs.count_documents()
-    db = get_db()
-    pending = db.execute(
-        "SELECT COUNT(*) AS cnt FROM pending_queries WHERE status = 'pending'"
-    ).fetchone()["cnt"]
+    
+    pending_coll = vs.get_collection(vs.PENDING_COLLECTION)
+    pending_res = pending_coll.get(where={"status": "pending"}, include=[])
+    pending = len(pending_res["ids"])
+    
     return {
         "total_games": len(games),
         "total_documents": total_docs,
@@ -304,8 +240,7 @@ def get_knowledge_stats() -> dict:
         "games": games,
     }
 
-
-# ── Scraping Task CRUD ─────────────────────────────────────────────
+# 鈹€鈹€ Scraping Task CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 def create_scraping_task(
     game_name: str,
@@ -313,113 +248,135 @@ def create_scraping_task(
     source_url: str,
     interval_hours: int = 24,
 ) -> dict:
-    db = get_db()
-    cur = db.execute(
-        """INSERT INTO scraping_tasks (game_name, source_name, source_url, interval_hours)
-           VALUES (?, ?, ?, ?)""",
-        (game_name, source_name, source_url, interval_hours),
-    )
-    db.commit()
-    row = db.execute("SELECT * FROM scraping_tasks WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return dict(row)
-
+    coll = vs.get_collection(vs.TASKS_COLLECTION)
+    tid = str(uuid.uuid4())
+    now = _now()
+    meta = {
+        "game_name": game_name,
+        "source_name": source_name,
+        "source_url": source_url,
+        "status": "pending",
+        "interval_hours": interval_hours,
+        "last_run": "",
+        "next_run": "",
+        "error_message": "",
+        "created_at": now
+    }
+    coll.add(ids=[tid], metadatas=[meta], documents=[""])
+    return {"id": tid, **meta}
 
 def list_scraping_tasks() -> list[dict]:
-    db = get_db()
-    rows = db.execute(
-        "SELECT * FROM scraping_tasks ORDER BY created_at DESC"
-    ).fetchall()
-    return [dict(r) for r in rows]
+    coll = vs.get_collection(vs.TASKS_COLLECTION)
+    res = coll.get(include=["metadatas"])
+    tasks = []
+    for i, tid in enumerate(res["ids"]):
+        tasks.append({"id": tid, **res["metadatas"][i]})
+    tasks.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return tasks
 
-
-def get_scraping_task(task_id: int) -> dict | None:
-    db = get_db()
-    row = db.execute("SELECT * FROM scraping_tasks WHERE id = ?", (task_id,)).fetchone()
-    return dict(row) if row else None
-
+def get_scraping_task(task_id: str) -> dict | None:
+    coll = vs.get_collection(vs.TASKS_COLLECTION)
+    res = coll.get(ids=[task_id], include=["metadatas"])
+    if not res["ids"]:
+        return None
+    return {"id": task_id, **res["metadatas"][0]}
 
 def update_scraping_task_status(
-    task_id: int,
+    task_id: str,
     status: str,
     error_message: str | None = None,
     next_run: str | None = None,
 ) -> None:
-    db = get_db()
-    db.execute(
-        """UPDATE scraping_tasks
-           SET status = ?, last_run = datetime('now','localtime'),
-               error_message = ?, next_run = ?
-           WHERE id = ?""",
-        (status, error_message, next_run, task_id),
-    )
-    db.commit()
+    coll = vs.get_collection(vs.TASKS_COLLECTION)
+    res = coll.get(ids=[task_id], include=["metadatas"])
+    if res["ids"]:
+        meta = res["metadatas"][0]
+        meta["status"] = status
+        meta["last_run"] = _now()
+        meta["error_message"] = error_message or ""
+        meta["next_run"] = next_run or ""
+        coll.update(ids=[task_id], metadatas=[meta])
 
+def delete_scraping_task(task_id: str) -> bool:
+    coll = vs.get_collection(vs.TASKS_COLLECTION)
+    if coll.get(ids=[task_id], include=[])["ids"]:
+        coll.delete(ids=[task_id])
+        return True
+    return False
 
-def delete_scraping_task(task_id: int) -> bool:
-    db = get_db()
-    cur = db.execute("DELETE FROM scraping_tasks WHERE id = ?", (task_id,))
-    db.commit()
-    return cur.rowcount > 0
+# 鈹€鈹€ Pending Queries CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-
-# ── Pending Queries CRUD (用户未答上的问题) ────────────────────────
-
-def add_pending_query(game_name: str, question: str) -> int:
-    """Record a user question that the knowledge base could not answer."""
-    db = get_db()
-    # Avoid duplicate pending questions for the same game
-    existing = db.execute(
-        "SELECT id FROM pending_queries WHERE game_name = ? AND question = ? AND status = 'pending'",
-        (game_name, question),
-    ).fetchone()
-    if existing:
-        return existing["id"]
-    cur = db.execute(
-        "INSERT INTO pending_queries (game_name, question) VALUES (?, ?)",
-        (game_name, question),
-    )
-    db.commit()
-    return cur.lastrowid
-
+def add_pending_query(game_name: str, question: str) -> str:
+    coll = vs.get_collection(vs.PENDING_COLLECTION)
+    res = coll.get(where={"$and": [{"game_name": game_name}, {"status": "pending"}]}, include=["documents"])
+    if question in res["documents"]:
+        idx = res["documents"].index(question)
+        return res["ids"][idx]
+        
+    qid = str(uuid.uuid4())
+    meta = {
+        "game_name": game_name,
+        "status": "pending",
+        "created_at": _now(),
+        "resolved_at": ""
+    }
+    coll.add(ids=[qid], metadatas=[meta], documents=[question])
+    return qid
 
 def list_pending_queries(limit: int = 100, status: str = "pending") -> list[dict]:
-    db = get_db()
-    rows = db.execute(
-        "SELECT * FROM pending_queries WHERE status = ? ORDER BY created_at DESC LIMIT ?",
-        (status, limit),
-    ).fetchall()
-    return [dict(r) for r in rows]
-
+    coll = vs.get_collection(vs.PENDING_COLLECTION)
+    res = coll.get(where={"status": status}, include=["metadatas", "documents"], limit=limit)
+    queries = []
+    for i, qid in enumerate(res["ids"]):
+        meta = res["metadatas"][i]
+        queries.append({
+            "id": qid,
+            "game_name": meta.get("game_name", ""),
+            "question": res["documents"][i],
+            "status": meta.get("status", ""),
+            "created_at": meta.get("created_at", ""),
+            "resolved_at": meta.get("resolved_at", "")
+        })
+    queries.sort(key=lambda x: x["created_at"], reverse=True)
+    return queries
 
 def list_pending_queries_by_game(game_name: str, status: str = "pending") -> list[dict]:
-    db = get_db()
-    rows = db.execute(
-        "SELECT * FROM pending_queries WHERE game_name = ? AND status = ? ORDER BY created_at ASC",
-        (game_name, status),
-    ).fetchall()
-    return [dict(r) for r in rows]
-
+    coll = vs.get_collection(vs.PENDING_COLLECTION)
+    res = coll.get(where={"$and": [{"game_name": game_name}, {"status": status}]}, include=["metadatas", "documents"])
+    queries = []
+    for i, qid in enumerate(res["ids"]):
+        meta = res["metadatas"][i]
+        queries.append({
+            "id": qid,
+            "game_name": meta.get("game_name", ""),
+            "question": res["documents"][i],
+            "status": meta.get("status", ""),
+            "created_at": meta.get("created_at", ""),
+            "resolved_at": meta.get("resolved_at", "")
+        })
+    queries.sort(key=lambda x: x["created_at"])
+    return queries
 
 def resolve_pending_queries_by_game(game_name: str) -> int:
-    """Mark all pending questions for a game as resolved."""
-    db = get_db()
-    cur = db.execute(
-        "UPDATE pending_queries SET status = 'resolved', resolved_at = datetime('now','localtime') "
-        "WHERE game_name = ? AND status = 'pending'",
-        (game_name,),
-    )
-    db.commit()
-    return cur.rowcount
+    coll = vs.get_collection(vs.PENDING_COLLECTION)
+    res = coll.get(where={"$and": [{"game_name": game_name}, {"status": "pending"}]}, include=["metadatas"])
+    if not res["ids"]:
+        return 0
+    now = _now()
+    for meta in res["metadatas"]:
+        meta["status"] = "resolved"
+        meta["resolved_at"] = now
+    coll.update(ids=res["ids"], metadatas=res["metadatas"])
+    return len(res["ids"])
 
+def delete_pending_query(query_id: str) -> bool:
+    coll = vs.get_collection(vs.PENDING_COLLECTION)
+    if coll.get(ids=[query_id], include=[])["ids"]:
+        coll.delete(ids=[query_id])
+        return True
+    return False
 
-def delete_pending_query(query_id: int) -> bool:
-    db = get_db()
-    cur = db.execute("DELETE FROM pending_queries WHERE id = ?", (query_id,))
-    db.commit()
-    return cur.rowcount > 0
-
-
-# ── Knowledge Logs CRUD (知识获取日志) ─────────────────────────────
+# 鈹€鈹€ Knowledge Logs CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 def add_knowledge_log(
     action: str,
@@ -427,55 +384,123 @@ def add_knowledge_log(
     trending_fetched: int = 0,
     games_detail: str | None = None,
     message: str | None = None,
-) -> int:
-    db = get_db()
-    cur = db.execute(
-        """INSERT INTO knowledge_logs
-           (action, pending_processed, trending_fetched, games_detail, message)
-           VALUES (?, ?, ?, ?, ?)""",
-        (action, pending_processed, trending_fetched, games_detail, message),
-    )
-    db.commit()
-    return cur.lastrowid
-
+) -> str:
+    coll = vs.get_collection(vs.LOGS_COLLECTION)
+    lid = str(uuid.uuid4())
+    meta = {
+        "action": action,
+        "pending_processed": pending_processed,
+        "trending_fetched": trending_fetched,
+        "games_detail": games_detail or "",
+        "created_at": _now()
+    }
+    coll.add(ids=[lid], metadatas=[meta], documents=[message or ""])
+    return lid
 
 def list_knowledge_logs(limit: int = 20) -> list[dict]:
-    db = get_db()
-    rows = db.execute(
-        "SELECT * FROM knowledge_logs ORDER BY created_at DESC LIMIT ?", (limit,)
-    ).fetchall()
-    return [dict(r) for r in rows]
+    coll = vs.get_collection(vs.LOGS_COLLECTION)
+    res = coll.get(include=["metadatas", "documents"])
+    logs = []
+    for i, lid in enumerate(res["ids"]):
+        meta = res["metadatas"][i]
+        logs.append({
+            "id": lid,
+            "action": meta.get("action", ""),
+            "pending_processed": meta.get("pending_processed", 0),
+            "trending_fetched": meta.get("trending_fetched", 0),
+            "games_detail": meta.get("games_detail", ""),
+            "message": res["documents"][i],
+            "created_at": meta.get("created_at", "")
+        })
+    logs.sort(key=lambda x: x["created_at"], reverse=True)
+    return logs[:limit]
 
+# 鈹€鈹€ Cache CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-# ── Semantic Chunks: 向量检索与上下文窗口 (委托 ChromaDB) ──────────
+def set_query_cache(query_hash: str, game_name: str, response: str, query_text: str, query_embedding: list[float] | None = None):
+    coll = vs.get_collection(vs.CACHE_COLLECTION)
+    cid = f"cache_{query_hash}"
+    meta = {"query_hash": query_hash, "game_name": game_name, "query_text": query_text, "created_at": _now()}
+    
+    kwargs = {
+        "ids": [cid],
+        "metadatas": [meta],
+        "documents": [response]
+    }
+    if query_embedding:
+        kwargs["embeddings"] = [_to_list(query_embedding)]
+    else:
+        # We must provide dummy embedding for Chroma if embedding_function=None
+        zeros = [0.0]*384
+        kwargs["embeddings"] = [zeros]
+        
+    try:
+        coll.add(**kwargs)
+    except Exception as e:
+        print(f"Error caching query: {e}")
 
-def insert_semantic_chunk(
-    document_id: str,
-    game_name: str,
-    content: str,
-    embedding: np.ndarray,
-    tag: str | None = None,
-) -> str:
-    """存储单条语义句到 ChromaDB,返回 sem id。document_id 为 parent doc 的字符串 id。"""
-    return vs.insert_semantic_chunk(document_id, game_name, content, embedding, tag=tag)
+def get_exact_query_cache(query_text: str, game_name: str) -> str | None:
+    coll = vs.get_collection(vs.CACHE_COLLECTION)
+    res = coll.get(where={"$and": [{"query_text": query_text}, {"game_name": game_name}]}, include=["documents"])
+    if res["ids"]:
+        return res["documents"][0]
+    return None
 
+def get_semantic_query_cache(query_embedding: list[float], game_name: str, threshold: float = 0.85) -> str | None:
+    coll = vs.get_collection(vs.CACHE_COLLECTION)
+    try:
+        res = coll.query(
+            query_embeddings=[_to_list(query_embedding)],
+            n_results=1,
+            where={"game_name": game_name},
+            include=["documents", "distances"]
+        )
+        if res["ids"] and res["ids"][0]:
+            sim = 1.0 - float(res["distances"][0][0])
+            if sim >= threshold:
+                return res["documents"][0][0]
+    except Exception:
+        pass
+    return None
 
-def search_similar_semantic(
-    query_embedding: np.ndarray,
-    game_name: str,
-    top_k: int = 5,
-    threshold: float | None = None,
-) -> list[dict]:
-    """
-    在 semantic_chunks collection 中按向量相似度检索,filtered by game_name。
-    返回 [{id, document_id, content, tag, similarity}],与旧 numpy 实现结构一致。
-    """
-    return vs.search_similar_semantic(query_embedding, game_name, top_k=top_k, threshold=threshold)
+# 鈹€鈹€ User Memory CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
+def add_user_memory(fact: str, embedding: list[float]):
+    coll = vs.get_collection(vs.MEMORY_COLLECTION)
+    mid = str(uuid.uuid4())
+    coll.add(
+        ids=[mid],
+        embeddings=[_to_list(embedding)],
+        documents=[fact],
+        metadatas=[{"created_at": _now()}]
+    )
 
-def get_document_with_context(doc_id) -> list[dict]:
-    """
-    Retrieve the specified parent document along with its immediate surrounding context
-    (previous and next chunks of the same game based on chunk_index).
-    """
-    return vs.get_document_with_context(doc_id)
+def get_user_memories(query_embedding: list[float] | None = None, top_k: int = 5) -> list[str]:
+    coll = vs.get_collection(vs.MEMORY_COLLECTION)
+    if query_embedding is None:
+        # return all or recent
+        res = coll.get(include=["documents"], limit=top_k)
+        return res["documents"]
+    
+    try:
+        res = coll.query(
+            query_embeddings=[_to_list(query_embedding)],
+            n_results=top_k,
+            include=["documents"]
+        )
+        if res["ids"] and res["ids"][0]:
+            return res["documents"][0]
+    except Exception:
+        pass
+    return []
+
+# 鈹€鈹€ Semantic Chunks 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+
+def insert_semantic_chunk(*args, **kwargs) -> str:
+    return vs.insert_semantic_chunk(*args, **kwargs)
+
+def search_similar_semantic(*args, **kwargs) -> list[dict]:
+    return vs.search_similar_semantic(*args, **kwargs)
+
+def get_document_with_context(*args, **kwargs) -> list[dict]:
+    return vs.get_document_with_context(*args, **kwargs)
