@@ -87,7 +87,8 @@ async def generate_hypothetical_answer(game_name: str, user_message: str) -> str
     用它检索比用原始问题检索召回率更高(HyDE 原理)。
     即使回答不准确也无妨,只需包含相关术语和概念。
     """
-    prompt = f"""用户想了解游戏《{game_name}》的以下问题:
+    game_context = f"游戏《{game_name}》" if game_name else "某款游戏"
+    prompt = f"""用户想了解{game_context}的以下问题:
 {user_message}
 
 请基于你对这款游戏的了解,生成一个简短的假设性回答(150-300字)。
