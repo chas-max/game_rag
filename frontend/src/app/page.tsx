@@ -3,6 +3,7 @@
 import { useChat } from "ai/react";
 import { useState, useEffect, useRef } from "react";
 import { Database, Plus, Send, X } from "lucide-react";
+import { Markdown } from "./components/Markdown";
 
 export default function ChatApp() {
   const [conversations, setConversations] = useState<any[]>([]);
@@ -10,7 +11,7 @@ export default function ChatApp() {
   const [showKbModal, setShowKbModal] = useState(false);
   const [kbStats, setKbStats] = useState<any>(null);
 
-  const { messages, input, handleInputChange, handleSubmit, setMessages, isLoading, data, append, setInput } = useChat({
+  const { messages, input, handleInputChange, handleSubmit, setMessages, isLoading, data, append, setInput, setData } = useChat({
     api: "/api/chat",
     body: {
       conversationId: currentConversationId
@@ -55,7 +56,8 @@ export default function ChatApp() {
       const data = await res.json();
       if (data.success) {
         setCurrentConversationId(data.data.id);
-        setMessages([]); 
+        setMessages([]);
+        setData([]); // 新建对话,清空残留载荷
         fetchConversations();
       }
     } catch (e) {
@@ -75,6 +77,7 @@ export default function ChatApp() {
           content: m.content
         }));
         setMessages(msgs);
+        setData([]); // 切换对话时清空上一对话残留的 progress/done 载荷,避免来源错位
       }
     } catch (e) {
       console.error(e);
@@ -140,6 +143,16 @@ export default function ChatApp() {
     }
   };
 
+  // data 累积了整段会话的 2:[...] 载荷;取最新的 progress / done 用于当前流式消息。
+  // ai v3 的 data 是 JSONValue[],这里以 any 取用,避免联合类型属性访问报错。
+  const latestProgress: any = data
+    ? [...data].reverse().find((d: any) => d?.type === "progress")
+    : null;
+  const latestDone: any = data
+    ? [...data].reverse().find((d: any) => d?.type === "done")
+    : null;
+  const latestSources = latestDone?.sources ?? [];
+
   return (
     <>
       <header id="top-bar">
@@ -182,40 +195,66 @@ export default function ChatApp() {
               欢迎使用全局查询模式！直接输入您想了解的任何游戏相关问题。
             </div>
           )}
-          {messages.map((m, index) => (
-            <div key={index} className={`message ${m.role === 'user' ? 'user' : 'assistant'}`}>
-              <div className="message-role">{m.role === 'user' ? '你' : '助手'}</div>
-              <div className="message-content">{m.content}</div>
-              
-              {/* Render custom Vercel AI SDK data sources if available on the last assistant message */}
-              {m.role === 'assistant' && index === messages.length - 1 && data && (
-                <div className="message-sources" style={{marginTop: '10px', padding: '10px', background: '#f5f5f5', borderRadius: '4px', fontSize: '0.85em', color: '#666'}}>
-                  {data.map((d: any, i) => (
-                    <div key={i}>
-                      {d.type === 'progress' && <span><strong>思考阶段:</strong> {d.message}</span>}
-                      {d.type === 'done' && d.sources && d.sources.length > 0 && (
-                        <div style={{marginTop: '5px'}}>
-                          <strong>参考来源:</strong>
-                          <ul style={{margin: '5px 0', paddingLeft: '20px'}}>
-                            {d.sources.map((s: any, idx: number) => (
-                              <li key={idx}>
-                                <a href={s.url} target="_blank" rel="noreferrer" style={{color: '#0070f3'}}>{s.title || '未知来源'}</a>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+          {messages.map((m, index) => {
+            const isLast = index === messages.length - 1;
+            const isStreamingAssistant = isLast && isLoading && m.role === "assistant";
+            const showThinking = isStreamingAssistant && !m.content;
+            const showCursor = isStreamingAssistant && !!m.content;
+            const isLastAssistant = isLast && m.role === "assistant";
+            return (
+              <div key={index} className={`message ${m.role === 'user' ? 'user' : 'assistant'}`}>
+                <div className="message-role">{m.role === 'user' ? '你' : '助手'}</div>
+                <div className="message-content">
+                  {m.role === 'assistant' ? (
+                    showThinking ? (
+                      <div className="thinking-row">
+                        <span className="spinner" />
+                        <span className="thinking-stage-text">
+                          {latestProgress?.message || '正在思考…'}
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <Markdown content={m.content} />
+                        {showCursor && <span className="streaming-cursor-dot" aria-hidden>▋</span>}
+                      </>
+                    )
+                  ) : (
+                    m.content
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
-          {isLoading && (
+
+                {isLastAssistant && !isLoading && latestSources.length > 0 && (
+                  <div className="message-sources">
+                    {latestSources.map((s: any, idx: number) => (
+                      <a
+                        key={idx}
+                        className="source-badge"
+                        href={s.url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {s.title || '未知来源'}
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {isLastAssistant && !isLoading && latestDone?.truncated && (
+                  <div className="message-truncated">⚠ 回答因模型异常被截断，请重试</div>
+                )}
+              </div>
+            );
+          })}
+          {isLoading && (messages.length === 0 || messages[messages.length - 1]?.role !== 'assistant') && (
             <div className="message assistant">
               <div className="message-role">助手</div>
-              <div className="message-content typing-indicator">
-                <span></span><span></span><span></span>
+              <div className="message-content">
+                <div className="thinking-row">
+                  <span className="spinner" />
+                  <span className="thinking-stage-text">
+                    {latestProgress?.message || '正在思考…'}
+                  </span>
+                </div>
               </div>
             </div>
           )}

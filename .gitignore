@@ -15,3 +15,10 @@ data/chroma/
 # SQLite WAL 文件(运行时临时文件)
 data/*.db-shm
 data/*.db-wal
+
+# SQLite 数据库(运行时数据,含本地测试对话,可由 init_db 重建;勿提交)
+data/*.db
+
+# 测试产物(浏览器 MCP 快照、截图)
+.playwright-mcp/
+current_page.png

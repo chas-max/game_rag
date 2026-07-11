@@ -1,6 +1,7 @@
 import asyncio
 import json
 import hashlib
+import uuid
 
 import httpx
 from openai import AsyncOpenAI
@@ -11,24 +12,35 @@ from app.tools import execute_tool, TOOLS_SCHEMA
 from config import settings
 
 FALLBACK_PROVIDERS = [
-    {
-        "name": "mimo",
-        "api_key": settings.mimo_api_key,
-        "base_url": settings.mimo_base_url,
-        "model": settings.mimo_model,
-    },
-    {
-        "name": "qwen",
-        "api_key": settings.qwen_api_key,
-        "base_url": settings.qwen_base_url,
-        "model": settings.qwen_model,
-    },
-    {
-        "name": "deepseek",
-        "api_key": settings.deepseek_api_key,
-        "base_url": settings.deepseek_base_url,
-        "model": settings.deepseek_model,
-    },
+    p for p in [
+        # 优先使用 .env 中实际配置的 OPENAI_* (默认指向 DeepSeek)，
+        # 再回退 mimo / dashscope / deepseek; 空 key 的 provider 会被过滤掉。
+        {
+            "name": "openai",
+            "api_key": settings.openai_api_key,
+            "base_url": settings.openai_base_url,
+            "model": settings.llm_model,
+        },
+        {
+            "name": "mimo",
+            "api_key": settings.mimo_api_key,
+            "base_url": settings.mimo_base_url,
+            "model": settings.mimo_model,
+        },
+        {
+            "name": "dashscope",
+            "api_key": settings.dashscope_api_key,
+            "base_url": settings.dashscope_base_url,
+            "model": settings.dashscope_model,
+        },
+        {
+            "name": "deepseek",
+            "api_key": settings.deepseek_api_key,
+            "base_url": settings.deepseek_base_url,
+            "model": settings.deepseek_model,
+        },
+    ]
+    if p["api_key"]
 ]
 
 
@@ -65,6 +77,143 @@ async def _chat_with_fallback(messages: list, tools: list = None, tool_choice: s
             last_error = e
             continue
     raise Exception(f"All fallback models failed. Last error: {last_error}")
+
+
+async def _chat_with_fallback_stream(
+    messages: list,
+    tools: list = None,
+    tool_choice: str = "auto",
+    temperature: float = 0.4,
+    report_callback=None,
+    on_content=None,
+) -> dict:
+    """流式版 _chat_with_fallback:逐 token 推送 content,同时拼装 tool_calls。
+
+    遍历 SSE chunk:
+    - delta.content -> 累积并经 on_content(piece) 实时推送给前端(逐字显示)。
+    - delta.tool_calls -> 按 tc.index 拼装 id / function.name / function.arguments
+      (同一工具调用的字段会分多个 chunk 到达,name/id 通常只在首个 chunk 出现)。
+    - 记录 finish_reason。
+
+    返回 {"content": str, "tool_calls": list[{id,name,arguments}], "finish_reason": str}。
+    当某 provider 在已推送 content 之后失败时,返回 {"content": <已收到的部分>,
+    "tool_calls": [], "finish_reason": "error", "error": ...} 而非抛异常,
+    避免切换 provider 导致两段输出拼接错乱(降级守卫)。
+
+    前提(OpenAI 兼容 provider 成立):同一轮 content 与 tool_calls 互斥——
+    工具调用轮 content 为空,最终回答轮 tool_calls 为空;推理模型的推理 token
+    走 reasoning_content,不进 content,故不会污染最终回答流。
+    """
+    last_error = None
+    for provider in FALLBACK_PROVIDERS:
+        emitted = False
+        content_parts: list[str] = []
+        tool_calls_buf: dict[int, dict] = {}
+        finish_reason = None
+        try:
+            if report_callback:
+                await report_callback("analyzing", f"正在使用 {provider['name']} 模型思考...")
+            client = _get_client(provider["api_key"], provider["base_url"])
+            response = await client.chat.completions.create(
+                model=provider["model"],
+                messages=messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                temperature=temperature,
+                stream=True,
+            )
+            async for chunk in response:
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                choice = choices[0]
+                if getattr(choice, "finish_reason", None):
+                    finish_reason = choice.finish_reason
+                delta = getattr(choice, "delta", None)
+                if delta is None:
+                    continue
+
+                piece = getattr(delta, "content", None)
+                if piece:
+                    content_parts.append(piece)
+                    emitted = True
+                    if on_content:
+                        await on_content(piece)
+
+                tcs = getattr(delta, "tool_calls", None)
+                if tcs:
+                    for tc in tcs:
+                        idx = getattr(tc, "index", None)
+                        idx = 0 if idx is None else idx
+                        slot = tool_calls_buf.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                        if getattr(tc, "id", None):
+                            slot["id"] += tc.id
+                        fn = getattr(tc, "function", None)
+                        if fn is not None:
+                            if getattr(fn, "name", None):
+                                slot["name"] += fn.name
+                            if getattr(fn, "arguments", None):
+                                slot["arguments"] += fn.arguments
+
+            return {
+                "content": "".join(content_parts),
+                "tool_calls": [tool_calls_buf[i] for i in sorted(tool_calls_buf)],
+                "finish_reason": finish_reason,
+            }
+        except Exception as e:
+            print(f"[agent] Provider {provider['name']} stream failed: {e}")
+            if emitted:
+                # 已向用户推送过 content,不能再换 provider(输出会拼接错乱),
+                # 把已收到的部分作为最终结果返回。
+                return {
+                    "content": "".join(content_parts),
+                    "tool_calls": [],
+                    "finish_reason": "error",
+                    "error": f"{provider['name']} mid-stream: {e}",
+                }
+            last_error = e
+            continue
+    raise Exception(f"All fallback models failed. Last error: {last_error}")
+
+
+async def _chat_non_stream_dict(
+    messages: list,
+    tools: list = None,
+    tool_choice: str = "auto",
+    temperature: float = 0.4,
+    report_callback=None,
+) -> dict:
+    """非流式版:复用 _chat_with_fallback(任一 provider 异常即 continue 到下一个,
+    返回完整响应或抛错),整理成与 _chat_with_fallback_stream 相同的 dict 形状供
+    agent 循环统一消费。
+
+    用于 POST /api/chat(非流式接口, progress_callback=None):该路径未向客户端
+    推送任何 token, provider 失败时可安全跨 provider 回退, 不受流式降级守卫(emitted,
+    仅在已向客户端推送 content 后阻止换 provider)约束, 行为与改动前的非流式路径一致。
+    """
+    response = await _chat_with_fallback(
+        messages=messages,
+        tools=tools,
+        tool_choice=tool_choice,
+        temperature=temperature,
+        report_callback=report_callback,
+    )
+    choice = response.choices[0]
+    msg = choice.message
+    tool_calls = []
+    if msg.tool_calls:
+        for i, tc in enumerate(msg.tool_calls):
+            tool_calls.append({
+                "id": tc.id or f"call_{i}_{uuid.uuid4().hex[:8]}",
+                "name": tc.function.name,
+                "arguments": tc.function.arguments or "{}",
+            })
+    return {
+        "content": msg.content or "",
+        "tool_calls": tool_calls,
+        "finish_reason": choice.finish_reason,
+    }
+
 
 def _get_query_hash(query: str, game_name: str) -> str:
     return hashlib.md5(f"{game_name}:{query}".encode("utf-8")).hexdigest()
@@ -344,7 +493,12 @@ async def generate_final_answer_stream(
     history_msgs: list[dict],
     on_token_callback=None,
 ) -> str:
-    """LLM 基于检索结果优化生成最终回答，支持流式输出。"""
+    """LLM 基于检索结果优化生成最终回答，支持流式输出。
+
+    注意:此函数当前未被活跃的 agent 路径(rag_query)调用--agent 循环自身的
+    _chat_with_fallback_stream 最后一轮(无 tool_calls)即产出最终回答并逐 token 推送。
+    保留此函数供 HyDE 非_agent 管线(见未跟踪的 rag_pipeline_head.py)及评测备用。
+    """
     # 构建上下文
     context_parts = []
     for i, doc in enumerate(retrieved):
@@ -493,60 +647,115 @@ async def rag_query(
     max_loops = 5
     loop_count = 0
     final_answer = ""
-    
+    truncated = False       # 回答被截断/异常:不缓存,并向前端透出标志提示用户
+    got_real_answer = False # 是否得到完整有效的最终回答(决定是否缓存)
+
+    # 非流式接口(POST /api/chat, progress_callback=None)未向客户端推送 token,
+    # 走非流式 _chat_non_stream_dict(任一 provider 失败即回退到下一个,与改动前一致);
+    # 流式接口(/api/chat/stream)走 _chat_with_fallback_stream 逐 token 推送。
+    streaming = progress_callback is not None
+
+    # 最终回答的逐 token 推送:首个 token 时先发一条无 content 的阶段进度
+    # (前端显示"正在生成回答…"),之后每个 token 经 _report(content=token) 实时推送。
+    first_token_sent = False
+
+    async def _on_token(token: str) -> None:
+        nonlocal first_token_sent
+        if not first_token_sent:
+            first_token_sent = True
+            await _report("generating", "正在生成回答…")
+        await _report("generating", "正在生成回答…", content=token)
+
     while loop_count < max_loops:
         loop_count += 1
-        
+
         try:
-            response = await _chat_with_fallback(
-                messages=messages,
-                tools=TOOLS_SCHEMA,
-                tool_choice="auto",
-                temperature=0.4,
-                report_callback=_report
-            )
+            if streaming:
+                result = await _chat_with_fallback_stream(
+                    messages=messages,
+                    tools=TOOLS_SCHEMA,
+                    tool_choice="auto",
+                    temperature=0.4,
+                    report_callback=_report,
+                    on_content=_on_token,
+                )
+            else:
+                result = await _chat_non_stream_dict(
+                    messages=messages,
+                    tools=TOOLS_SCHEMA,
+                    tool_choice="auto",
+                    temperature=0.4,
+                    report_callback=_report,
+                )
         except Exception as e:
             final_answer = f"大模型调用失败，已尝试降级机制全部失败: {str(e)}"
+            truncated = True
             break
-            
-        choice = response.choices[0]
-        msg = choice.message
-        
-        messages.append(msg)
-        
-        if msg.tool_calls:
-            # Execute tools
-            for tool_call in msg.tool_calls:
-                fn_name = tool_call.function.name
+
+        content = result["content"]
+        tool_calls = result["tool_calls"]
+        finish_reason = result.get("finish_reason")
+
+        if tool_calls:
+            # 工具调用轮:解析每个 tool_call 的 id/arguments(对 provider 偶发缺失的
+            # 空 id/空 arguments 做兜底,避免回传 API 时 400),拼装 assistant 消息入历史,
+            # 执行工具后继续循环。
+            resolved = []
+            for i, tc in enumerate(tool_calls):
+                resolved.append({
+                    "id": tc["id"] or f"call_{i}_{uuid.uuid4().hex[:8]}",
+                    "name": tc["name"],
+                    "arguments": tc["arguments"] or "{}",
+                })
+            messages.append({
+                "role": "assistant",
+                "content": content or None,
+                "tool_calls": [
+                    {"id": r["id"], "type": "function",
+                     "function": {"name": r["name"], "arguments": r["arguments"]}}
+                    for r in resolved
+                ],
+            })
+            for r in resolved:
+                fn_name = r["name"]
                 try:
-                    args = json.loads(tool_call.function.arguments)
+                    args = json.loads(r["arguments"])
                 except json.JSONDecodeError:
                     args = {}
-                
+
                 await _report("tool_call", f"正在使用工具：{fn_name}...")
                 print(f"[agent] Calling tool {fn_name} with args {args}")
-                
+
                 tool_result = await execute_tool(fn_name, args)
-                
+
                 messages.append({
-                    "tool_call_id": tool_call.id,
+                    "tool_call_id": r["id"],
                     "role": "tool",
                     "name": fn_name,
                     "content": tool_result,
                 })
         else:
-            # Final answer
-            final_answer = msg.content or ""
+            # 最终回答轮:content 已(流式时)通过 _on_token 逐 token 输出
+            final_answer = content or ""
+            if result.get("error") or finish_reason in ("length", "content_filter") or not final_answer:
+                # 流式中途失败 / token 上限截断 / 内容过滤 / 空回答:视为截断,不缓存
+                truncated = True
+                if not final_answer:
+                    final_answer = "（未生成有效回答，请重试。）"
+            else:
+                got_real_answer = True
             break
 
     if loop_count >= max_loops and not final_answer:
         final_answer = "思考过程过长，未能得出最终结论。"
+        truncated = True
 
-    # Stream the final answer if needed (we'll just report it as a chunk for now)
-    await _report("generating", "生成完毕。", content=final_answer)
+    # 最终回答已逐 token 流式输出,这里不再整段补发(避免与已推送的 token 重复)。
+    # 缓存命中 / 兜底文案等"无 token 流出"的场景,由 done 事件携带 answer 整段显示。
 
-    # Cache the result
-    db.set_query_cache(query_hash, game_name, final_answer, user_message, query_vec)
+    # 只缓存完整有效的回答(截断/错误/兜底/空内容均不缓存,避免污染后续相同查询)
+    if got_real_answer:
+        db.set_query_cache(query_hash, game_name, final_answer, user_message, query_vec)
 
     # Save to db
     db.save_message(conversation_id, "assistant", final_answer, "[]")
@@ -558,4 +767,4 @@ async def rag_query(
         new_title = user_message[:30] + ("..." if len(user_message) > 30 else "")
         db.update_conversation(conversation_id, new_title)
 
-    return {"answer": final_answer, "sources": [], "conversation_id": conversation_id}
+    return {"answer": final_answer, "sources": [], "conversation_id": conversation_id, "truncated": truncated}

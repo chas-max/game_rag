@@ -37,19 +37,17 @@ export async function POST(req: Request) {
           if (line.startsWith('data: ')) {
             try {
               const payload = JSON.parse(line.slice(6));
-              if (payload.type === 'progress') {
-                if (payload.content) {
-                  hasStreamedTokens = true;
-                  // Text chunk format: 0:"content"
-                  controller.enqueue(new TextEncoder().encode(`0:${JSON.stringify(payload.content)}\n`));
-                } else {
-                  // Data chunk format: 2:[...] (formerly d:)
-                  controller.enqueue(new TextEncoder().encode(`2:${JSON.stringify([{
-                    type: 'progress',
-                    stage: payload.stage,
-                    message: payload.message
-                  }])}\n`));
-                }
+              if (payload.type === 'token') {
+                // 最终回答的逐 token 文本:0:"content" 逐字追加
+                hasStreamedTokens = true;
+                controller.enqueue(new TextEncoder().encode(`0:${JSON.stringify(payload.content)}\n`));
+              } else if (payload.type === 'progress') {
+                // 思考阶段进度(无 content):2:[{progress}]
+                controller.enqueue(new TextEncoder().encode(`2:${JSON.stringify([{
+                  type: 'progress',
+                  stage: payload.stage,
+                  message: payload.message
+                }])}\n`));
               } else if (payload.type === 'done') {
                 // If we didn't stream any tokens (e.g. database insufficient or error fallback),
                 // we send the entire answer as a single text chunk now.
@@ -57,10 +55,11 @@ export async function POST(req: Request) {
                   controller.enqueue(new TextEncoder().encode(`0:${JSON.stringify(payload.data.answer)}\n`));
                 }
                 
-                controller.enqueue(new TextEncoder().encode(`2:${JSON.stringify([{ 
-                  type: 'done', 
+                controller.enqueue(new TextEncoder().encode(`2:${JSON.stringify([{
+                  type: 'done',
                   sources: payload.data.sources,
-                  conversation_id: payload.data.conversation_id
+                  conversation_id: payload.data.conversation_id,
+                  truncated: !!payload.data.truncated
                 }])}\n`));
               } else if (payload.type === 'error') {
                 // Error chunk format: 3:"message"

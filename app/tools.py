@@ -56,15 +56,46 @@ async def search_knowledge_base(query: str, game_name: str) -> str:
 
 async def search_web(query: str) -> str:
     """Search the internet for up-to-date information.
-    
+
+    优先使用 Tavily (配置了 TAVILY_API_KEY 时), 否则回退到 DuckDuckGo。
+
     Args:
         query: The search query string.
     """
+    if settings.tavily_api_key:
+        try:
+            return await _tavily_search(query)
+        except Exception as e:
+            # Tavily 失败时回退 DuckDuckGo,保证工具可用
+            print(f"[tool] Tavily search failed, falling back to DuckDuckGo: {e}")
+    return await _ddg_search(query)
+
+
+async def _tavily_search(query: str) -> str:
+    """Tavily 网络检索。"""
+    from tavily import AsyncTavilyClient  # 延迟导入,避免未安装时影响模块加载
+
+    client = AsyncTavilyClient(api_key=settings.tavily_api_key)
+    res = await client.search(query, max_results=5, search_depth="basic")
+    results = res.get("results") or []
+    if not results:
+        return "No web search results found."
+    parts = []
+    for r in results:
+        title = r.get("title", "")
+        href = r.get("url", "")
+        body = r.get("content", "")
+        parts.append(f"[{title}]({href}): {body}")
+    return "\n\n".join(parts)
+
+
+async def _ddg_search(query: str) -> str:
+    """DuckDuckGo 网络检索 (Tavily 未配置或失败时的回退)。"""
     try:
         results = DDGS().text(query, max_results=5)
         if not results:
             return "No web search results found."
-            
+
         parts = []
         for r in results:
             title = r.get("title", "")

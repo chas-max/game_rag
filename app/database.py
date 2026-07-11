@@ -32,7 +32,7 @@ def create_conversation(game_name: str, title: str = "New Conversation") -> dict
     conv_id = str(uuid.uuid4())
     now = _now()
     meta = {"title": title, "game_name": game_name, "created_at": now, "updated_at": now}
-    coll.add(ids=[conv_id], metadatas=[meta], documents=[""])
+    coll.add(ids=[conv_id], metadatas=[meta], documents=[""], embeddings=[[0.0]])
     return {"id": conv_id, **meta}
 
 
@@ -153,7 +153,7 @@ def save_message(conv_id: str, role: str, content: str, sources: str | None = No
         "sources": sources or "",
         "created_at": now
     }
-    coll.add(ids=[mid], metadatas=[meta], documents=[content])
+    coll.add(ids=[mid], metadatas=[meta], documents=[content], embeddings=[[0.0]])
     return {"id": mid, "content": content, **meta}
 
 
@@ -262,7 +262,7 @@ def create_scraping_task(
         "error_message": "",
         "created_at": now
     }
-    coll.add(ids=[tid], metadatas=[meta], documents=[""])
+    coll.add(ids=[tid], metadatas=[meta], documents=[""], embeddings=[[0.0]])
     return {"id": tid, **meta}
 
 def list_scraping_tasks() -> list[dict]:
@@ -320,7 +320,7 @@ def add_pending_query(game_name: str, question: str) -> str:
         "created_at": _now(),
         "resolved_at": ""
     }
-    coll.add(ids=[qid], metadatas=[meta], documents=[question])
+    coll.add(ids=[qid], metadatas=[meta], documents=[question], embeddings=[[0.0]])
     return qid
 
 def list_pending_queries(limit: int = 100, status: str = "pending") -> list[dict]:
@@ -394,7 +394,7 @@ def add_knowledge_log(
         "games_detail": games_detail or "",
         "created_at": _now()
     }
-    coll.add(ids=[lid], metadatas=[meta], documents=[message or ""])
+    coll.add(ids=[lid], metadatas=[meta], documents=[message or ""], embeddings=[[0.0]])
     return lid
 
 def list_knowledge_logs(limit: int = 20) -> list[dict]:
@@ -427,7 +427,7 @@ def set_query_cache(query_hash: str, game_name: str, response: str, query_text: 
         "metadatas": [meta],
         "documents": [response]
     }
-    if query_embedding:
+    if query_embedding is not None:
         kwargs["embeddings"] = [_to_list(query_embedding)]
     else:
         # We must provide dummy embedding for Chroma if embedding_function=None

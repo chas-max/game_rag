@@ -342,12 +342,24 @@ def search_similar_semantic(
 # ── 删除 ────────────────────────────────────────────────────────────
 
 def delete_documents_by_game(game_name: str) -> int:
-    """删除某游戏的全部文档及语义句,返回删除的文档数。"""
+    """删除某游戏的全部文档及语义句,返回删除的文档数。
+
+    分批删除以避免 ChromaDB 的 batch size 限制。
+    """
     docs = _docs_collection()
     sems = _sem_collection()
-    before = len(docs.get(where={"game_name": game_name}, include=[], limit=100000)["ids"])
-    docs.delete(where={"game_name": game_name})
-    sems.delete(where={"game_name": game_name})
+
+    # 分批删除 documents
+    doc_ids = docs.get(where={"game_name": game_name}, include=[], limit=100000)["ids"]
+    before = len(doc_ids)
+    for batch in _batched(doc_ids):
+        docs.delete(ids=batch)
+
+    # 分批删除 semantic_chunks
+    sem_ids = sems.get(where={"game_name": game_name}, include=[], limit=100000)["ids"]
+    for batch in _batched(sem_ids):
+        sems.delete(ids=batch)
+
     return before
 
 

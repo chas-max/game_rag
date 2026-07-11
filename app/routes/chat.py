@@ -35,22 +35,24 @@ async def chat(req: ChatRequest):
 async def chat_stream(req: ChatRequest):
     """流式聊天接口。
 
-    通过 Server-Sent Events 向前端推送两类事件:
-    - {"type": "progress", "stage": "...", "message": "..."}  思考阶段进度
-    - {"type": "done",    "data": {...}}                       最终回答
-    - {"type": "error",   "error": "..."}                      异常
+    通过 Server-Sent Events 向前端推送事件:
+    - {"type": "progress", "stage": "...", "message": "..."}  思考阶段进度(无 content)
+    - {"type": "token",    "content": "..."}                  最终回答的逐 token 文本
+    - {"type": "done",     "data": {...}}                     最终回答完成(含 answer/sources)
+    - {"type": "error",    "error": "..."}                    异常
 
-    使用 asyncio.Queue 解耦 pipeline 执行与 HTTP 流: pipeline 在后台任务中
-    运行,通过 progress_callback 把阶段事件放入队列; event_stream 从队列
-    读取并逐条 yield,收到 done/error 后结束。
+    pipeline 通过 progress_callback 把阶段事件与 token 放入队列; event_stream
+    从队列读取并逐条 yield,收到 done/error 后结束。
+    token 事件刻意精简(只含 content),降低逐 token 推送时的冗余载荷。
     """
     queue: asyncio.Queue = asyncio.Queue()
 
     async def progress(stage: str, message: str, content: str = None) -> None:
-        event = {"type": "progress", "stage": stage, "message": message}
         if content is not None:
-            event["content"] = content
-        await queue.put(event)
+            # 最终回答的 token:走精简的 token 事件,前端转成 0:"content" 逐字追加
+            await queue.put({"type": "token", "content": content})
+        else:
+            await queue.put({"type": "progress", "stage": stage, "message": message})
 
     async def run_pipeline() -> None:
         try:
